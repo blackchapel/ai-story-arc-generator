@@ -13,7 +13,9 @@ CORE PRINCIPLES
 2. TIMELINE WEIGHTING
    - Extract 8–10 significant events in chronological order.
    - Weight recent events (last 90 days) more heavily; mark the most recent event `"isLatest": true`.
-   - Assign `badgeType` (neg | pos | neu | tag1 | tag2) to reflect actual impact, not tone.
+   - Assign `badgeType` (neg | pos | neu | tag1 | tag2) to reflect actual impact, not tone:
+     * LIGHT MODE stories: Use `pos` for growth/adoption/success milestones. Use `neg` only for setbacks/regulatory hurdles. Use `accent` for key partnerships/launches.
+     * DARK MODE stories: Use `neg` for losses/crises/casualties. Use `pos` for rare positive developments. Use `accent` for turning points regardless of valence.
    - Identify 1–2 events that were genuine TURNING POINTS — moments after which the story
      could not return to its prior state. Mark these `"isTurningPoint": true`. Omit the field
      entirely on all other events (do not write `"isTurningPoint": false`).
@@ -100,14 +102,42 @@ CORE PRINCIPLES
     description of events; end on relevance.
     
 11. THEME GENERATION:
-    Derive the accent, neg, pos, tag1, tag2 colours from the story's dominant mood and subject:
-    - A political crisis → accent: deep crimson, neg: bright red
-    - Vatican/religion → accent: gold (#c9a84c), tag1: papal purple (#7b5ea7)
-    - War/conflict → accent: amber, neg: #ff4444, bg shifts slightly warmer
-    - Economy → accent: emerald green, tag1: orange
-    - Environment → accent: forest green, pos: cyan
-    Always keep bg/surface/card dark (within #080808–#1f2030 range) for readability.
-    Populate the overrides field with any extra CSS variable tweaks needed.
+    EXPLICIT RULES for theme selection:
+    
+    → ALWAYS USE LIGHT MODE for: UPI adoption, digital payments growth, fintech wins, blockchain success, 
+       startup funding, IPO announcements, economic growth, tech breakthroughs, medical advances, 
+       renewable energy progress, peace treaties, recovery stories, achievements, records, infrastructure wins
+       BONUS: For fintech/banking/digital payments stories, use blue (pos: #00897b or accent: #2196f3) prominently
+    
+    → ALWAYS USE DARK MODE for: War, terrorism, natural disasters, pandemics, disease, market crash,
+       recession, bankruptcy, layoffs, crisis, scandal, political conflict, collateral damage, death toll,
+       emergency, outbreak, collapse, insecurity, violence, extremism
+    
+    → If the story is ambiguous (mixed positive + negative), default to the MOST RECENT event's tone:
+       If latest development is a crisis → DARK MODE. If latest is a breakthrough → LIGHT MODE.
+    
+    Then use the appropriate 5-colour semantic palette below.
+    These colours are selected for strong contrast with their respective backgrounds.
+    
+    DARK MODE colours (bright, high-saturation for dark backgrounds):
+    - bg: #0b0c0f, surface: #13151a, card: #191c23, cardHover: #1e2128
+    - border: #232730, divider: #232730, text: #c9cdd8
+    - neg: #ff1744 (bright red for losses/crises)
+    - pos: #34d399 (emerald/teal for resolution/stability)
+    - accent: #f0b429 (gold/amber for featured moments)
+    - tag1: #f97316 (orange for secondary emphasis)
+    - tag2: #c084fc (purple for tertiary details)
+    
+    LIGHT MODE colours (dark, saturated for light backgrounds):
+    - bg: #fafafa, surface: #f5f5f7, card: #ffffff, cardHover: #f5f5f7
+    - border: #e0e0e3, divider: #d0d0d3, text: #1c1c1e, textBright: #000000
+    - neg: #d32f2f (dark red for losses/crises)
+    - pos: #00897b (dark teal for resolution/stability)
+    - accent: #f57c00 (dark orange for featured moments)
+    - tag1: #c62828 (deep red for secondary emphasis)
+    - tag2: #6a1b9a (deep purple for tertiary details)
+    
+    Populate the overrides field with any extra CSS variable tweaks needed for theme consistency.
 
 OUTPUT: Return ONLY a single valid JSON object. No markdown fences, no preamble, no commentary.
 """

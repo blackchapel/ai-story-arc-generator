@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
+
 # --- Theme and Meta ---
 
 class Theme(BaseModel):
@@ -25,18 +26,24 @@ class Theme(BaseModel):
     chartGrid: str
     overrides: Dict[str, str] = {}
 
+
 class Meta(BaseModel):
     brand: str = "story<em>arc</em>"
     liveLabel: str
+
+
+# --- Topic and Sections ---
 
 class Topic(BaseModel):
     eyebrow: str
     title: str
     subtitle: str
 
+
 class SectionInfo(BaseModel):
     num: str
     title: str
+
 
 class Sections(BaseModel):
     panels: SectionInfo
@@ -48,6 +55,7 @@ class Sections(BaseModel):
     takeaways: SectionInfo
     blindspots: SectionInfo
 
+
 # --- Components ---
 
 class Stat(BaseModel):
@@ -57,31 +65,53 @@ class Stat(BaseModel):
     chipClass: Optional[str] = None
     valClass: str  # "warn" | "up" | "ok" | "accent"
 
+
 class Panel(BaseModel):
-    tag: str
-    tagBg: str
-    tagColor: str
-    dateColor: str
+    tag: str = Field(..., description="ALL CAPS chapter label e.g. ORIGIN, ESCALATION.")
+    tagBg: str = Field(..., description="rgba() background for the tag chip.")
+    tagColor: str = Field(..., description="#fff or #0b0c0f depending on tagBg brightness.")
+    dateColor: str = Field(..., description="Hex matching tagBg hue.")
     date: str
-    head: str
-    body: str
-    sceneBg: str = Field(..., description="CSS linear-gradient e.g. 'linear-gradient(135deg,#1a0508 0%,#3d0d0d 100%)'. Never a flat hex.")
-    visualScene: str
-    colourMood: str
-    keyMetric: Optional[str] = None
-    image: str  # e.g. panel_1.jpg
+    head: str = Field(..., description="Punchy headline. Max 12 words.")
+    body: str = Field(..., description="2-3 sentences. Last sentence must answer 'so what?'")
+    sceneBg: str = Field(
+        ...,
+        description="CSS linear-gradient matching colourMood. NEVER a flat hex. "
+                    "Example: 'linear-gradient(135deg,#1a0508 0%,#3d0d0d 100%)'"
+    )
+    visualScene: str = Field(
+        ...,
+        description="Standalone Imagen 4.0 prompt. No text/labels/flags/real faces. "
+                    "3-5 sentences describing setting, lighting, mood, camera angle."
+    )
+    colourMood: str = Field(..., description="Dominant palette in 3-6 words.")
+    keyMetric: Optional[str] = Field(
+        None,
+        description="Standout number or human-scale equivalent. Use null only if no quantification possible."
+    )
+    keyMetricLabel: Optional[str] = Field(
+        None,
+        description="3-5 word label for keyMetric. Omit if keyMetric is null."
+    )
+    image: str = Field(..., description="Filename e.g. panel_1.jpg up to panel_6.jpg.")
     sentiment: str  # "negative" | "positive" | "neutral" | "warning"
+
 
 class TimelineEvent(BaseModel):
     type: str  # "neg" | "pos" | "tag1" | "tag2" | "hot"
     date: str
-    head: str
-    body: str
-    callout: Optional[str] = None
-    badge: str
+    head: str = Field(..., description="One sentence. Max 12 words.")
+    body: str = Field(..., description="2-3 sentences of context.")
+    callout: Optional[str] = Field(None, description="One-line downstream impact insight.")
+    badge: str = Field(..., description="Symbol + label e.g. '↓ War declared'.")
     badgeType: str  # "neg" | "pos" | "tag1" | "tag2" | "neu"
     source: Optional[str] = None
     isLatest: bool = False
+    isTurningPoint: Optional[bool] = Field(
+        None,
+        description="Set to true only for 1-2 genuine turning points. Omit entirely for all other events."
+    )
+
 
 # --- Charting ---
 
@@ -92,6 +122,7 @@ class Thresholds(BaseModel):
     midColor: str
     lowColor: str
 
+
 class Dataset(BaseModel):
     label: str
     data: List[float]
@@ -101,6 +132,7 @@ class Dataset(BaseModel):
     thresholds: Optional[Thresholds] = None
     dashed: Optional[bool] = False
 
+
 class AxisConfig(BaseModel):
     min: float
     max: float
@@ -109,6 +141,7 @@ class AxisConfig(BaseModel):
     prefix: Optional[str] = None
     position: Optional[str] = None  # "right" or omit for left
 
+
 class Chart(BaseModel):
     title: str
     subtitle: str
@@ -116,12 +149,14 @@ class Chart(BaseModel):
     datasets: List[Dataset]
     yAxes: Dict[str, AxisConfig]
 
+
 # --- Sentiment River ---
 
 class SentimentPoint(BaseModel):
-    period: str
+    period: str = Field(..., description="Display label e.g. 'Oct 23'.")
     score: float  # -1.0 to +1.0
-    eventLabel: str
+    eventLabel: str = Field(..., description="2-4 word descriptor.")
+
 
 # --- Analysis & Insights ---
 
@@ -135,6 +170,7 @@ class Lens(BaseModel):
     metricLabel: str
     metricType: str  # "warn" | "up" | "ok"
 
+
 class Quote(BaseModel):
     flag: str
     logoBg: str
@@ -143,16 +179,19 @@ class Quote(BaseModel):
     text: str
     attr: str
 
+
 class Takeaway(BaseModel):
     type: Optional[str] = None  # "tag1" | "tag2" | "neg" | "pos"
     head: str
     body: str
+
 
 class Blindspot(BaseModel):
     icon: str = "🔦"
     tag: str
     head: str
     body: str
+
 
 # --- Root Model ---
 

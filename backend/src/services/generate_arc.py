@@ -64,11 +64,11 @@ def get_raw_news(topic, limit):
 # ==========================================
 # STEP 2: GENERATE JSON DATA
 # ==========================================
-def analyze_story(articles: StoryArc, job_id: str):
+def analyze_story(articles: StoryArc, job_id: str, topic: str):
     print(f"[*] Analyzing narrative arc")
     
     sys_prompt = generate_news_data.system_instruction
-    user_input = generate_news_data.user_prompt+ json.dumps(articles)
+    user_input = generate_news_data.user_prompt + json.dumps(articles) + topic
     
     response = client.models.generate_content(
         model=TEXT_MODEL, 
@@ -153,7 +153,7 @@ def run_pipeline(topic: str, job_id: str):
     Path(output_path).mkdir(parents=True, exist_ok=True)
 
     articles = get_raw_news(topic, ARTICLE_LIMIT)
-    analysis = analyze_story(articles, job_id)
+    analysis = analyze_story(articles, job_id, topic)
     generate_comic_panels(analysis, job_id)
     build_static_arc(analysis, job_id)
 
@@ -161,6 +161,6 @@ def run_pipeline(topic: str, job_id: str):
     print(f"\n[*] Complete Story Arc processed in {runtime}s")
 
 if __name__ == "__main__":
-    run_pipeline("zomato ipo", "123")
+    run_pipeline("pahalgam attack", "123")
 
     

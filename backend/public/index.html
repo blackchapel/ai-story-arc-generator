@@ -1,0 +1,1897 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title id="pg-title">arc.</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <style>
+      :root {
+        --bg: #0b0c0f;
+        --surface: #13151a;
+        --card: #191c23;
+        --card-hover: #1e2128;
+        --border: #232730;
+        --border2: #2d3240;
+        --divider: #232730;
+        --appbar-bg: rgba(11, 12, 15, 0.94);
+        --text: #c9cdd8;
+        --text-bright: #eceef4;
+        --text-dim: #606878;
+        --accent: #f0b429;
+        --accent-dark: #e8920e;
+        --accent-bg: rgba(240, 180, 41, 0.08);
+        --accent-tint: rgba(240, 180, 41, 0.04);
+        --accent-border: rgba(240, 180, 41, 0.22);
+        --neg: #f05252;
+        --neg-bg: rgba(240, 82, 82, 0.08);
+        --neg-border: rgba(240, 82, 82, 0.22);
+        --pos: #34d399;
+        --pos-bg: rgba(52, 211, 153, 0.08);
+        --pos-border: rgba(52, 211, 153, 0.22);
+        --blue: #60a5fa;
+        --blue-bg: rgba(96, 165, 250, 0.08);
+        --tag1: #f97316;
+        --tag1-bg: rgba(249, 115, 22, 0.08);
+        --tag1-border: rgba(249, 115, 22, 0.22);
+        --tag2: #c084fc;
+        --tag2-bg: rgba(192, 132, 252, 0.08);
+        --tag2-border: rgba(192, 132, 252, 0.22);
+        --chart-grid: #1f2530;
+        --shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+        --r: 14px;
+        --serif: "DM Sans", -apple-system, sans-serif;
+        --display: "Nunito", sans-serif;
+        --mono: "JetBrains Mono", monospace;
+        --safe-top: env(safe-area-inset-top, 0px);
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--serif);
+        font-size: 14px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+        max-width: 430px;
+        margin: 0 auto;
+        min-height: 100vh;
+        padding-bottom: 36px;
+      }
+
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+
+      .appbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: calc(var(--safe-top) + 10px) 18px 10px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: var(--appbar-bg);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-bottom: 1px solid var(--border);
+      }
+      .brand {
+        font-family: var(--display);
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text-bright);
+        letter-spacing: -0.02em;
+      }
+      .brand em {
+        color: var(--accent);
+        font-style: normal;
+      }
+      .live-pill {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        color: var(--neg);
+        background: var(--neg-bg);
+        border: 1px solid var(--neg-border);
+        border-radius: 20px;
+        padding: 3px 10px;
+        text-transform: uppercase;
+      }
+      .live-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--neg);
+        animation: pulse 1.5s infinite;
+        display: inline-block;
+      }
+
+      .topic-hdr {
+        padding: 18px 18px 0;
+        animation: fadeUp 0.5s ease both;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.18em;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        margin-bottom: 7px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .eyebrow-dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: inline-block;
+      }
+      h1.title {
+        font-family: var(--display);
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text-bright);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        margin-bottom: 6px;
+      }
+      h1.title em {
+        color: var(--neg);
+        font-style: normal;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: var(--text-dim);
+        font-style: italic;
+        border-left: 3px solid var(--tag1);
+        padding-left: 10px;
+        margin-top: 10px;
+        line-height: 1.5;
+      }
+
+      .stats-row {
+        display: flex;
+        gap: 8px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .stats-row::-webkit-scrollbar {
+        display: none;
+      }
+      .stat-chip {
+        flex-shrink: 0;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 14px;
+        min-width: 108px;
+      }
+      .stat-chip.tag1-chip {
+        border-color: var(--tag1-border);
+        background: var(--tag1-bg);
+      }
+      .stat-chip.tag1-chip .stat-label {
+        color: var(--tag1);
+      }
+      .stat-chip.tag2-chip {
+        border-color: var(--tag2-border);
+        background: var(--tag2-bg);
+      }
+      .stat-chip.tag2-chip .stat-label {
+        color: var(--tag2);
+      }
+      .stat-chip.neg-chip {
+        border-color: var(--neg-border);
+        background: var(--neg-bg);
+      }
+      .stat-chip.neg-chip .stat-label {
+        color: var(--neg);
+      }
+      .stat-chip.pos-chip {
+        border-color: var(--pos-border);
+        background: var(--pos-bg);
+      }
+      .stat-chip.pos-chip .stat-label {
+        color: var(--pos);
+      }
+      .stat-chip.accent-chip {
+        border-color: var(--accent-border);
+        background: var(--accent-bg);
+      }
+      .stat-chip.accent-chip .stat-label {
+        color: var(--accent);
+      }
+      .stat-label {
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.14em;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .stat-val {
+        font-family: var(--display);
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--text-bright);
+        line-height: 1;
+      }
+      .stat-val.up {
+        color: var(--neg);
+      }
+      .stat-val.warn {
+        color: var(--tag1);
+      }
+      .stat-val.ok {
+        color: var(--pos);
+      }
+      .stat-val.accent {
+        color: var(--accent);
+      }
+      .stat-sub {
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-dim);
+        margin-top: 3px;
+      }
+
+      .sec {
+        padding: 22px 0 4px;
+      }
+      .sec-hdr {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 16px;
+        margin-bottom: 14px;
+      }
+      .sec-num {
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.16em;
+        color: var(--accent);
+        background: var(--accent-bg);
+        border: 1px solid var(--accent-border);
+        border-radius: 4px;
+        padding: 2px 7px;
+      }
+      .sec-title {
+        font-family: var(--display);
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text-bright);
+        letter-spacing: -0.02em;
+      }
+
+      .comic-outer {
+        overflow: hidden;
+      }
+      .comic-track {
+        display: flex;
+        gap: 10px;
+        padding: 0 16px 6px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none;
+        cursor: grab;
+      }
+      .comic-track::-webkit-scrollbar {
+        display: none;
+      }
+      .comic-track:active {
+        cursor: grabbing;
+      }
+      .comic-panel {
+        flex-shrink: 0;
+        width: 264px;
+        border-radius: var(--r);
+        overflow: hidden;
+        border: 2px solid var(--border2);
+        scroll-snap-align: start;
+        background: var(--card);
+        box-shadow: var(--shadow);
+        transition:
+          transform 0.2s,
+          border-color 0.2s;
+      }
+      .comic-panel:hover {
+        transform: translateY(-2px);
+      }
+      .comic-panel.active {
+        border-color: var(--accent);
+      }
+      .comic-scene {
+        height: 155px;
+        position: relative;
+        overflow: hidden;
+      }
+      .comic-scene svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .panel-num {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 2;
+        font-family: var(--mono);
+        font-size: 8px;
+        background: rgba(0, 0, 0, 0.55);
+        color: #fff;
+        border-radius: 4px;
+        padding: 2px 7px;
+        letter-spacing: 0.1em;
+      }
+      .panel-tag {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 2;
+        font-family: var(--mono);
+        font-size: 8px;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-weight: 500;
+      }
+      .comic-caption {
+        padding: 12px 14px 14px;
+        border-top: 1px solid var(--border);
+        background: var(--card);
+      }
+      .cap-date {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+        color: var(--accent);
+      }
+      .cap-head {
+        font-family: var(--display);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-bright);
+        line-height: 1.3;
+        margin-bottom: 4px;
+      }
+      .cap-body {
+        font-size: 11.5px;
+        color: var(--text-dim);
+        line-height: 1.55;
+      }
+      .comic-dots {
+        display: flex;
+        gap: 5px;
+        justify-content: center;
+        padding: 8px 0 4px;
+      }
+      .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--border2);
+        transition: all 0.25s;
+        cursor: pointer;
+      }
+      .dot.active {
+        background: var(--accent);
+        width: 16px;
+        border-radius: 3px;
+      }
+
+      .overview {
+        margin: 0 16px;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-left: 4px solid var(--accent);
+        border-radius: 0 var(--r) var(--r) 0;
+        padding: 16px;
+        box-shadow: var(--shadow);
+      }
+      .overview p {
+        font-size: 13.5px;
+        line-height: 1.8;
+        color: var(--text);
+      }
+      .overview p strong,
+      .overview p b {
+        color: var(--text-bright);
+        font-weight: 600;
+      }
+      .hl-accent {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .hl-neg {
+        color: var(--neg);
+        font-weight: 600;
+      }
+      .hl-pos {
+        color: var(--pos);
+        font-weight: 600;
+      }
+      .hl-tag1 {
+        color: var(--tag1);
+        font-weight: 600;
+      }
+      .hl-tag2 {
+        color: var(--tag2);
+        font-weight: 600;
+      }
+
+      .tl-view-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 28px;
+        border-radius: 8px;
+        border: 1.5px solid var(--border2);
+        background: var(--card);
+        cursor: pointer;
+        transition: all 0.2s;
+        opacity: 0.55;
+      }
+      .tl-view-btn:hover {
+        opacity: 0.85;
+        border-color: var(--accent);
+      }
+      .tl-view-btn.active {
+        background: var(--accent-bg);
+        border-color: var(--accent);
+        opacity: 1;
+      }
+      .tl-view-btn svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: var(--text-bright);
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .tl-wrap {
+        padding: 0 16px;
+        position: relative;
+        overflow: hidden;
+        transition:
+          max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+          opacity 0.3s;
+      }
+      .tl-wrap::before {
+        content: "";
+        position: absolute;
+        left: 27px;
+        top: 8px;
+        bottom: 8px;
+        width: 1.5px;
+        background: linear-gradient(
+          to bottom,
+          var(--accent),
+          var(--border),
+          transparent
+        );
+      }
+      .te {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 18px;
+        animation: fadeUp 0.4s ease both;
+        position: relative;
+      }
+      .te:last-child {
+        margin-bottom: 0;
+      }
+      .tl-left {
+        flex-shrink: 0;
+        width: 24px;
+        display: flex;
+        justify-content: center;
+        padding-top: 3px;
+      }
+      .tl-dot {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        border: 2.5px solid var(--border2);
+        background: var(--bg);
+        flex-shrink: 0;
+      }
+      .te.neg .tl-dot {
+        border-color: var(--neg);
+        background: var(--neg-bg);
+      }
+      .te.pos .tl-dot {
+        border-color: var(--pos);
+        background: var(--pos-bg);
+      }
+      .te.hot .tl-dot {
+        border-color: var(--accent);
+        background: var(--accent-dark);
+        box-shadow: 0 0 0 3px var(--accent-bg);
+      }
+      .te.tag1 .tl-dot {
+        border-color: var(--tag1);
+        background: var(--tag1-bg);
+      }
+      .te.tag2 .tl-dot {
+        border-color: var(--tag2);
+        background: var(--tag2-bg);
+      }
+      .tl-right {
+        flex: 1;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 14px;
+        box-shadow: var(--shadow);
+      }
+      .te.neg .tl-right {
+        border-left: 3px solid var(--neg);
+      }
+      .te.pos .tl-right {
+        border-left: 3px solid var(--pos);
+      }
+      .te.hot .tl-right {
+        border-left: 3px solid var(--accent);
+        background: var(--accent-tint);
+      }
+      .te.tag1 .tl-right {
+        border-left: 3px solid var(--tag1);
+        background: var(--tag1-bg);
+      }
+      .te.tag2 .tl-right {
+        border-left: 3px solid var(--tag2);
+        background: var(--tag2-bg);
+      }
+      .tl-date {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 4px;
+      }
+      .te.neg .tl-date {
+        color: var(--neg);
+      }
+      .te.pos .tl-date {
+        color: var(--pos);
+      }
+      .te.hot .tl-date {
+        color: var(--accent);
+      }
+      .te.tag1 .tl-date {
+        color: var(--tag1);
+      }
+      .te.tag2 .tl-date {
+        color: var(--tag2);
+      }
+      .tl-head {
+        font-family: var(--display);
+        font-size: 13.5px;
+        font-weight: 700;
+        color: var(--text-bright);
+        line-height: 1.3;
+      }
+      .tl-body-wrap {
+        overflow: hidden;
+        transition:
+          max-height 0.3s ease,
+          opacity 0.25s,
+          margin 0.25s;
+      }
+      .compact .tl-body-wrap {
+        max-height: 0;
+        opacity: 0;
+        margin-top: 0;
+      }
+      .normal .tl-body-wrap {
+        max-height: 300px;
+        opacity: 1;
+        margin-top: 5px;
+      }
+      .tl-body {
+        font-size: 12.5px;
+        color: var(--text-dim);
+        line-height: 1.6;
+      }
+      .tag1-callout {
+        margin-top: 8px;
+        padding: 7px 10px;
+        background: var(--tag1-bg);
+        border: 1px solid var(--tag1-border);
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--tag1);
+        line-height: 1.5;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-family: var(--mono);
+        font-size: 8.5px;
+        letter-spacing: 0.06em;
+        padding: 2px 8px;
+        border-radius: 20px;
+        margin-top: 7px;
+      }
+      .b-neg {
+        background: var(--neg-bg);
+        color: var(--neg);
+        border: 1px solid var(--neg-border);
+      }
+      .b-pos {
+        background: var(--pos-bg);
+        color: var(--pos);
+        border: 1px solid var(--pos-border);
+      }
+      .b-neu {
+        background: var(--accent-bg);
+        color: var(--accent);
+        border: 1px solid var(--accent-border);
+      }
+      .b-tag1 {
+        background: var(--tag1-bg);
+        color: var(--tag1);
+        border: 1px solid var(--tag1-border);
+      }
+      .b-tag2 {
+        background: var(--tag2-bg);
+        color: var(--tag2);
+        border: 1px solid var(--tag2-border);
+      }
+      .tl-src {
+        font-family: var(--mono);
+        font-size: 8.5px;
+        color: var(--text-dim);
+        margin-top: 6px;
+        opacity: 0.6;
+      }
+      .tl-src::before {
+        content: "↗ ";
+      }
+
+      .chart-card {
+        margin: 0 16px;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-radius: var(--r);
+        padding: 16px;
+        box-shadow: var(--shadow);
+      }
+      .chart-card::before {
+        content: "";
+        display: block;
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          var(--neg),
+          var(--accent),
+          var(--pos)
+        );
+        border-radius: 3px;
+        margin-bottom: 14px;
+      }
+      .ct-title {
+        font-family: var(--display);
+        font-size: 14px;
+        font-weight: 800;
+        color: var(--text-bright);
+        margin-bottom: 2px;
+      }
+      .ct-sub {
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-dim);
+        margin-bottom: 14px;
+      }
+
+      .lens-scroll {
+        display: flex;
+        gap: 10px;
+        padding: 0 16px 4px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        scroll-snap-type: x mandatory;
+      }
+      .lens-scroll::-webkit-scrollbar {
+        display: none;
+      }
+      .lens-card {
+        flex-shrink: 0;
+        width: 230px;
+        scroll-snap-align: start;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-radius: var(--r);
+        padding: 16px;
+        box-shadow: var(--shadow);
+        transition: transform 0.2s;
+      }
+      .lens-card:hover {
+        transform: translateY(-2px);
+      }
+      .lens-card.featured {
+        border-color: var(--tag1-border);
+        background: var(--tag1-bg);
+      }
+      .lens-cat {
+        font-family: var(--mono);
+        font-size: 8.5px;
+        letter-spacing: 0.16em;
+        color: var(--accent);
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .lens-card.featured .lens-cat {
+        color: var(--tag1);
+      }
+      .lens-title-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 9px;
+        margin-bottom: 8px;
+      }
+      .lens-icon {
+        font-size: 20px;
+        line-height: 1.2;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .lens-head {
+        font-family: var(--display);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-bright);
+        line-height: 1.3;
+      }
+      .lens-body {
+        font-size: 11.5px;
+        color: var(--text-dim);
+        line-height: 1.6;
+      }
+      .lens-metric {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+      }
+      .lm-val {
+        font-family: var(--display);
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--text-bright);
+        line-height: 1;
+      }
+      .lm-val.up {
+        color: var(--neg);
+      }
+      .lm-val.warn {
+        color: var(--tag1);
+      }
+      .lm-val.ok {
+        color: var(--pos);
+      }
+      .lm-val.accent {
+        color: var(--accent);
+      }
+      .lm-lbl {
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-dim);
+        margin-top: 3px;
+      }
+
+      .quotes {
+        padding: 0 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .qblock {
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-left: 4px solid var(--blue);
+        border-radius: 0 12px 12px 0;
+        padding: 14px;
+        box-shadow: var(--shadow);
+        display: flex;
+        gap: 13px;
+        align-items: flex-start;
+      }
+      .qlogo {
+        flex-shrink: 0;
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        border: 1px solid var(--border2);
+      }
+      .qcontent {
+        flex: 1;
+        min-width: 0;
+      }
+      .qtext {
+        font-style: italic;
+        font-size: 13px;
+        color: var(--text-bright);
+        line-height: 1.6;
+        margin-bottom: 7px;
+      }
+      .qattr {
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-dim);
+        letter-spacing: 0.07em;
+        line-height: 1.4;
+      }
+
+      .takeaways {
+        display: flex;
+        gap: 10px;
+        padding: 0 16px 4px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none;
+      }
+      .takeaways::-webkit-scrollbar {
+        display: none;
+      }
+      .tk-card {
+        flex-shrink: 0;
+        width: 236px;
+        scroll-snap-align: start;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-top: 3px solid var(--accent);
+        border-radius: var(--r);
+        padding: 16px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s;
+      }
+      .tk-card:hover {
+        transform: translateY(-2px);
+      }
+      .tk-card.tk-tag1 {
+        border-top-color: var(--tag1);
+        background: var(--tag1-bg);
+      }
+      .tk-card.tk-tag2 {
+        border-top-color: var(--tag2);
+        background: var(--tag2-bg);
+      }
+      .tk-card.tk-neg {
+        border-top-color: var(--neg);
+        background: var(--neg-bg);
+      }
+      .tk-card.tk-pos {
+        border-top-color: var(--pos);
+        background: var(--pos-bg);
+      }
+      .tk-num {
+        font-family: var(--mono);
+        font-size: 8.5px;
+        letter-spacing: 0.16em;
+        color: var(--accent);
+        text-transform: uppercase;
+        margin-bottom: 9px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tk-num::before {
+        content: "";
+        display: inline-block;
+        width: 18px;
+        height: 2px;
+        background: var(--accent);
+        border-radius: 2px;
+      }
+      .tk-card.tk-tag1 .tk-num {
+        color: var(--tag1);
+      }
+      .tk-card.tk-tag1 .tk-num::before {
+        background: var(--tag1);
+      }
+      .tk-card.tk-tag2 .tk-num {
+        color: var(--tag2);
+      }
+      .tk-card.tk-tag2 .tk-num::before {
+        background: var(--tag2);
+      }
+      .tk-card.tk-neg .tk-num {
+        color: var(--neg);
+      }
+      .tk-card.tk-neg .tk-num::before {
+        background: var(--neg);
+      }
+      .tk-card.tk-pos .tk-num {
+        color: var(--pos);
+      }
+      .tk-card.tk-pos .tk-num::before {
+        background: var(--pos);
+      }
+      .tk-head {
+        font-family: var(--display);
+        font-size: 13.5px;
+        font-weight: 800;
+        color: var(--text-bright);
+        line-height: 1.3;
+        margin-bottom: 8px;
+        letter-spacing: -0.01em;
+      }
+      .tk-body {
+        font-size: 12px;
+        color: var(--text-dim);
+        line-height: 1.65;
+        flex: 1;
+      }
+      .tk-body strong,
+      .tk-body b {
+        color: var(--text-bright);
+        font-weight: 600;
+      }
+
+      .blindspots {
+        padding: 0 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bs-card {
+        background: var(--card);
+        border: 1.5px solid var(--border2);
+        border-radius: 14px;
+        padding: 14px 16px;
+        box-shadow: var(--shadow);
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 0 12px;
+        align-items: start;
+        transition: border-color 0.2s;
+      }
+      .bs-card:hover {
+        border-color: var(--accent);
+      }
+      .bs-icon-wrap {
+        grid-row: 1/4;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: var(--accent-bg);
+        border: 1px solid var(--accent-border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 17px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .bs-tag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 7.5px;
+        letter-spacing: 0.12em;
+        padding: 2px 8px;
+        border-radius: 20px;
+        margin-bottom: 5px;
+        background: var(--border2);
+        color: var(--text-dim);
+        border: 1px solid var(--border2);
+        text-transform: uppercase;
+        opacity: 0.85;
+      }
+      .bs-card:hover .bs-tag {
+        background: var(--accent-bg);
+        color: var(--accent);
+        border-color: var(--accent-border);
+        opacity: 1;
+      }
+      .bs-head {
+        font-family: var(--display);
+        font-size: 12.5px;
+        font-weight: 800;
+        color: var(--text-bright);
+        line-height: 1.35;
+        margin-bottom: 5px;
+        letter-spacing: -0.01em;
+      }
+      .bs-body {
+        font-size: 11.5px;
+        color: var(--text-dim);
+        line-height: 1.62;
+        grid-column: 2;
+      }
+
+      .sources-wrap {
+        padding: 0 16px 4px;
+      }
+      .src-title {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.16em;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      .src-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .src-chip {
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-dim);
+        border: 1.5px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 10px;
+        background: var(--card);
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--divider);
+        margin: 20px 16px;
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <script id="arc-data" type="application/json">
+      {{ARC_DATA}}
+    </script>
+
+    <div class="appbar">
+      <div id="el-brand" class="brand">story<em>arc</em></div>
+      <div class="live-pill">
+        <span class="live-dot"></span><span id="el-live"></span>
+      </div>
+    </div>
+    <div id="arc-root"></div>
+    <div style="height: 28px"></div>
+
+    <script>
+      (function () {
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     THEME ENGINE
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+        function hexToRgb(hex) {
+          var h = hex.replace("#", "");
+          if (h.length === 3) {
+            h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+          }
+          return [
+            parseInt(h.slice(0, 2), 16),
+            parseInt(h.slice(2, 4), 16),
+            parseInt(h.slice(4, 6), 16),
+          ];
+        }
+
+        /* Each entry: JSON key → CSS var name + optional derived companions */
+        var TOKEN_MAP = [
+          { key: "bg", cssVar: "--bg" },
+          { key: "surface", cssVar: "--surface" },
+          { key: "card", cssVar: "--card" },
+          { key: "cardHover", cssVar: "--card-hover" },
+          { key: "border", cssVar: "--border" },
+          { key: "border2", cssVar: "--border2" },
+          { key: "divider", cssVar: "--divider" },
+          { key: "appbarBg", cssVar: "--appbar-bg" },
+          { key: "text", cssVar: "--text" },
+          { key: "textBright", cssVar: "--text-bright" },
+          { key: "textDim", cssVar: "--text-dim" },
+          { key: "chartGrid", cssVar: "--chart-grid" },
+          {
+            key: "accent",
+            cssVar: "--accent",
+            darkVar: "--accent-dark",
+            bgVar: "--accent-bg",
+            tintVar: "--accent-tint",
+            borderVar: "--accent-border",
+          },
+          {
+            key: "neg",
+            cssVar: "--neg",
+            bgVar: "--neg-bg",
+            borderVar: "--neg-border",
+          },
+          {
+            key: "pos",
+            cssVar: "--pos",
+            bgVar: "--pos-bg",
+            borderVar: "--pos-border",
+          },
+          { key: "blue", cssVar: "--blue", bgVar: "--blue-bg" },
+          {
+            key: "tag1",
+            cssVar: "--tag1",
+            bgVar: "--tag1-bg",
+            borderVar: "--tag1-border",
+          },
+          {
+            key: "tag2",
+            cssVar: "--tag2",
+            bgVar: "--tag2-bg",
+            borderVar: "--tag2-border",
+          },
+        ];
+
+        function applyTheme(t) {
+          if (!t) return;
+          var s = document.documentElement.style;
+
+          TOKEN_MAP.forEach(function (tok) {
+            var val = t[tok.key];
+            if (!val) return;
+
+            s.setProperty(tok.cssVar, val);
+
+            /* Companion dark shade (e.g. accentDark) */
+            if (tok.darkVar) {
+              var darkKey = tok.key + "Dark";
+              if (t[darkKey]) s.setProperty(tok.darkVar, t[darkKey]);
+            }
+
+            /* Auto-derive rgba variants only for hex values */
+            if (/^#/.test(val)) {
+              var rgb = hexToRgb(val);
+              var r = rgb[0],
+                g = rgb[1],
+                b = rgb[2];
+              if (tok.bgVar)
+                s.setProperty(
+                  tok.bgVar,
+                  "rgba(" + r + "," + g + "," + b + ",0.08)",
+                );
+              if (tok.tintVar)
+                s.setProperty(
+                  tok.tintVar,
+                  "rgba(" + r + "," + g + "," + b + ",0.04)",
+                );
+              if (tok.borderVar)
+                s.setProperty(
+                  tok.borderVar,
+                  "rgba(" + r + "," + g + "," + b + ",0.22)",
+                );
+            }
+          });
+
+          /* Explicit overrides — applied last, win over everything */
+          var overrides = t.overrides || {};
+          Object.keys(overrides).forEach(function (k) {
+            s.setProperty(k, overrides[k]);
+          });
+        }
+
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     HELPERS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+        function el(id) {
+          return document.getElementById(id);
+        }
+        function div(cls, html) {
+          return '<div class="' + cls + '">' + (html || "") + "</div>";
+        }
+        function divider() {
+          return '<div class="divider"></div>';
+        }
+
+        function secHdr(num, title, extra) {
+          return (
+            '<div class="sec-hdr" style="margin-bottom:14px">' +
+            '<span class="sec-num">' +
+            num +
+            "</span>" +
+            '<span class="sec-title">' +
+            title +
+            "</span>" +
+            (extra || "") +
+            "</div>"
+          );
+        }
+
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     SECTION RENDERERS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+        function renderTopicHeader(D) {
+          var t = D.topic || {};
+          return (
+            '<div class="topic-hdr">' +
+            '<div class="eyebrow"><span class="eyebrow-dot"></span>' +
+            (t.eyebrow || "") +
+            "</div>" +
+            '<h1 class="title">' +
+            (t.title || "") +
+            "</h1>" +
+            '<div class="subtitle">' +
+            (t.subtitle || "") +
+            "</div>" +
+            "</div>"
+          );
+        }
+
+        function renderStats(D) {
+          var chips = (D.stats || [])
+            .map(function (s) {
+              return (
+                '<div class="stat-chip' +
+                (s.chipClass ? " " + s.chipClass : "") +
+                '">' +
+                '<div class="stat-label">' +
+                s.label +
+                "</div>" +
+                '<div class="stat-val' +
+                (s.valClass ? " " + s.valClass : "") +
+                '">' +
+                s.value +
+                "</div>" +
+                '<div class="stat-sub">' +
+                s.sub +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+          return div("stats-row", chips);
+        }
+
+        function renderPanels(D) {
+          var panels = D.panels || [];
+          var n = panels.length;
+          var cards = panels
+            .map(function (p, i) {
+              var num =
+                (i + 1 < 10 ? "0" : "") +
+                (i + 1) +
+                " / " +
+                (n < 10 ? "0" : "") +
+                n;
+              var tagStyle =
+                'style="background:' +
+                (p.tagBg || "rgba(240,82,82,.85)") +
+                ";color:" +
+                (p.tagColor || "#fff") +
+                '"';
+              var dateStyle = p.dateColor
+                ? 'style="color:' + p.dateColor + '"'
+                : "";
+              var sceneStyle = p.sceneBg
+                ? ' style="background:' + p.sceneBg + '"'
+                : "";
+              var sceneContent = p.image
+                ? '<img src="' +
+                  p.image +
+                  '" alt="' +
+                  (p.tag || "") +
+                  '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">'
+                : p.sceneHtml || "";
+              return (
+                '<div class="comic-panel" data-index="' +
+                i +
+                '">' +
+                '<div class="comic-scene"' +
+                sceneStyle +
+                ">" +
+                '<div class="panel-num">' +
+                num +
+                "</div>" +
+                '<div class="panel-tag" ' +
+                tagStyle +
+                ">" +
+                (p.tag || "") +
+                "</div>" +
+                sceneContent +
+                "</div>" +
+                '<div class="comic-caption">' +
+                '<div class="cap-date" ' +
+                dateStyle +
+                ">" +
+                (p.date || "") +
+                "</div>" +
+                '<div class="cap-head">' +
+                (p.head || "") +
+                "</div>" +
+                '<div class="cap-body">' +
+                (p.body || "") +
+                "</div>" +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+
+          var dots = panels
+            .map(function (_, i) {
+              return (
+                '<div class="dot' +
+                (i === 0 ? " active" : "") +
+                '" data-i="' +
+                i +
+                '"></div>'
+              );
+            })
+            .join("");
+
+          var s = (D.sections && D.sections.panels) || {};
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "01", s.title || "The Story in Panels") +
+            '<div class="comic-outer"><div class="comic-track" id="comicTrack">' +
+            cards +
+            "</div></div>" +
+            '<div class="comic-dots" id="comicDots">' +
+            dots +
+            "</div>" +
+            "</div>"
+          );
+        }
+
+        function renderOverview(D) {
+          if (!D.overview) return "";
+          var s = (D.sections && D.sections.overview) || {};
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "02", s.title || "Overview") +
+            '<div class="overview"><p>' +
+            D.overview +
+            "</p></div>" +
+            "</div>"
+          );
+        }
+
+        function renderTimeline(D) {
+          var controls =
+            '<div style="margin-left:auto;display:flex;align-items:center;gap:6px">' +
+            '<button class="tl-view-btn" id="btnCompact"><svg viewBox="0 0 16 16"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg></button>' +
+            '<button class="tl-view-btn active" id="btnNormal"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="5" rx="1"/><rect x="2" y="9" width="12" height="5" rx="1"/></svg></button>' +
+            '<button class="tl-view-btn" id="tlToggle" style="width:28px"><svg viewBox="0 0 14 14" id="tlArrow"><polyline points="2,4 7,10 12,4"/></svg></button>' +
+            "</div>";
+
+          var rows = (D.timeline || [])
+            .map(function (e) {
+              return (
+                '<div class="te ' +
+                (e.type || "") +
+                '">' +
+                '<div class="tl-left"><div class="tl-dot"></div></div>' +
+                '<div class="tl-right">' +
+                '<div class="tl-date">' +
+                (e.date || "") +
+                "</div>" +
+                '<div class="tl-head">' +
+                (e.head || "") +
+                "</div>" +
+                '<div class="tl-body-wrap">' +
+                '<div class="tl-body">' +
+                (e.body || "") +
+                "</div>" +
+                (e.callout
+                  ? '<div class="tag1-callout">' + e.callout + "</div>"
+                  : "") +
+                (e.badge
+                  ? '<div class="badge b-' +
+                    (e.badgeType || "neu") +
+                    '">' +
+                    e.badge +
+                    "</div>"
+                  : "") +
+                (e.source ? '<div class="tl-src">' + e.source + "</div>" : "") +
+                "</div>" +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+
+          var s = (D.sections && D.sections.timeline) || {};
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "03", s.title || "Timeline", controls) +
+            '<div class="tl-wrap normal" id="tlWrap" style="max-height:4000px"><div class="tl">' +
+            rows +
+            "</div></div>" +
+            "</div>"
+          );
+        }
+
+        function renderChart(D) {
+          if (!D.chart) return "";
+          var c = D.chart;
+          var s = (D.sections && D.sections.chart) || {};
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "04", s.title || "Data Snapshot") +
+            '<div class="chart-card">' +
+            '<div class="ct-title">' +
+            (c.title || "") +
+            "</div>" +
+            '<div class="ct-sub">' +
+            (c.subtitle || "") +
+            "</div>" +
+            '<canvas id="oilChart" height="175"></canvas>' +
+            "</div>" +
+            "</div>"
+          );
+        }
+
+        function renderLenses(D) {
+          var s = (D.sections && D.sections.lenses) || {};
+          var cards = (D.lenses || [])
+            .map(function (l) {
+              return (
+                '<div class="lens-card' +
+                (l.featured ? " featured" : "") +
+                '">' +
+                '<div class="lens-cat">' +
+                (l.cat || "") +
+                "</div>" +
+                '<div class="lens-title-row">' +
+                '<span class="lens-icon">' +
+                (l.icon || "") +
+                "</span>" +
+                '<div class="lens-head">' +
+                (l.head || "") +
+                "</div>" +
+                "</div>" +
+                '<div class="lens-body">' +
+                (l.body || "") +
+                "</div>" +
+                '<div class="lens-metric">' +
+                '<div class="lm-val' +
+                (l.metricType ? " " + l.metricType : "") +
+                '">' +
+                (l.metricVal || "") +
+                "</div>" +
+                '<div class="lm-lbl">' +
+                (l.metricLabel || "") +
+                "</div>" +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "05", s.title || "Coverage Lenses") +
+            '<div class="lens-scroll">' +
+            cards +
+            "</div></div>"
+          );
+        }
+
+        function renderQuotes(D) {
+          var s = (D.sections && D.sections.quotes) || {};
+          var blocks = (D.quotes || [])
+            .map(function (q) {
+              var borderStyle = q.accentColor
+                ? "border-left-color:" + q.accentColor
+                : "";
+              var logoStyle =
+                "background:" +
+                (q.logoBg || "rgba(255,255,255,0.05)") +
+                ";border-color:" +
+                (q.logoBorder || "var(--border2)");
+              return (
+                '<div class="qblock" style="' +
+                borderStyle +
+                '">' +
+                '<div class="qlogo" style="' +
+                logoStyle +
+                '">' +
+                (q.flag || "") +
+                "</div>" +
+                '<div class="qcontent">' +
+                '<div class="qtext">' +
+                (q.text || "") +
+                "</div>" +
+                '<div class="qattr">' +
+                (q.attr || "") +
+                "</div>" +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "06", s.title || "Key Voices") +
+            '<div class="quotes">' +
+            blocks +
+            "</div></div>"
+          );
+        }
+
+        function renderTakeaways(D) {
+          var s = (D.sections && D.sections.takeaways) || {};
+          var cards = (D.takeaways || [])
+            .map(function (t, i) {
+              var num = "Takeaway " + (i + 1 < 10 ? "0" : "") + (i + 1);
+              return (
+                '<div class="tk-card' +
+                (t.type ? " tk-" + t.type : "") +
+                '">' +
+                '<div class="tk-num">' +
+                num +
+                "</div>" +
+                '<div class="tk-head">' +
+                (t.head || "") +
+                "</div>" +
+                '<div class="tk-body">' +
+                (t.body || "") +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "07", s.title || "Key Takeaways") +
+            '<div class="takeaways">' +
+            cards +
+            "</div></div>"
+          );
+        }
+
+        function renderBlindspots(D) {
+          var s = (D.sections && D.sections.blindspots) || {};
+          var cards = (D.blindspots || [])
+            .map(function (b) {
+              return (
+                '<div class="bs-card">' +
+                '<div class="bs-icon-wrap">' +
+                (b.icon || "") +
+                "</div>" +
+                '<div class="bs-tag">' +
+                (b.tag || "") +
+                "</div>" +
+                '<div class="bs-head">' +
+                (b.head || "") +
+                "</div>" +
+                '<div class="bs-body">' +
+                (b.body || "") +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+          return (
+            '<div class="sec">' +
+            secHdr(s.num || "08", s.title || "Blindspots in Coverage") +
+            '<div class="blindspots">' +
+            cards +
+            "</div></div>"
+          );
+        }
+
+        function renderSources(D) {
+          var chips = (D.sources || [])
+            .map(function (s) {
+              return '<span class="src-chip">' + s + "</span>";
+            })
+            .join("");
+          return (
+            '<div class="sources-wrap"><div class="src-title">Sources</div><div class="src-chips">' +
+            chips +
+            "</div></div>"
+          );
+        }
+
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     INTERACTIVE BEHAVIOURS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+        function initCarousel() {
+          var track = el("comicTrack");
+          var dotsEl = el("comicDots");
+          if (!track || !dotsEl) return;
+          var panels = track.querySelectorAll(".comic-panel");
+          var dots = dotsEl.querySelectorAll(".dot");
+
+          function setActive(i) {
+            dots.forEach(function (d, j) {
+              d.classList.toggle("active", j === i);
+            });
+            panels.forEach(function (p, j) {
+              p.classList.toggle("active", j === i);
+            });
+          }
+
+          var scrollTimer;
+          track.addEventListener(
+            "scroll",
+            function () {
+              clearTimeout(scrollTimer);
+              scrollTimer = setTimeout(function () {
+                var panelWidth =
+                  track.querySelector(".comic-panel").offsetWidth + 10;
+                var idx = Math.min(
+                  Math.round(track.scrollLeft / panelWidth),
+                  panels.length - 1,
+                );
+                setActive(idx);
+              }, 80);
+            },
+            { passive: true },
+          );
+
+          dots.forEach(function (d) {
+            d.addEventListener("click", function () {
+              var i = parseInt(d.getAttribute("data-i"), 10);
+              var panelWidth =
+                track.querySelector(".comic-panel").offsetWidth + 10;
+              track.scrollTo({ left: i * panelWidth, behavior: "smooth" });
+              setActive(i);
+            });
+          });
+        }
+
+        function initTimeline() {
+          var wrap = el("tlWrap");
+          var arrow = el("tlArrow");
+          var btnC = el("btnCompact");
+          var btnN = el("btnNormal");
+          var toggle = el("tlToggle");
+          if (!wrap) return;
+
+          function setMode(mode) {
+            wrap.classList.remove("compact", "normal");
+            wrap.classList.add(mode);
+            if (btnC) btnC.classList.toggle("active", mode === "compact");
+            if (btnN) btnN.classList.toggle("active", mode === "normal");
+          }
+
+          if (btnC)
+            btnC.addEventListener("click", function () {
+              setMode("compact");
+            });
+          if (btnN)
+            btnN.addEventListener("click", function () {
+              setMode("normal");
+            });
+
+          var collapsed = false;
+          if (toggle) {
+            toggle.addEventListener("click", function () {
+              collapsed = !collapsed;
+              if (collapsed) {
+                wrap.style.maxHeight = wrap.scrollHeight + "px";
+                requestAnimationFrame(function () {
+                  wrap.style.maxHeight = "0";
+                  wrap.style.opacity = "0";
+                });
+                if (arrow) arrow.style.transform = "rotate(-90deg)";
+              } else {
+                wrap.style.maxHeight = "4000px";
+                wrap.style.opacity = "1";
+                if (arrow) arrow.style.transform = "rotate(0deg)";
+              }
+            });
+          }
+        }
+
+        function initChart(D) {
+          if (!D.chart) return;
+          var c = D.chart;
+          var cvs = el("oilChart");
+          if (!cvs) return;
+
+          function hexRgb(hex) {
+            var rgb = hexToRgb(hex);
+            return rgb[0] + "," + rgb[1] + "," + rgb[2];
+          }
+
+          var textDimColor =
+            D.theme && D.theme.textDim ? D.theme.textDim : "#606878";
+          var bgColor = D.theme && D.theme.bg ? D.theme.bg : "#0b0c0f";
+          var gridColor =
+            D.theme && D.theme.chartGrid ? D.theme.chartGrid : "#1f2530";
+
+          Chart.defaults.color = textDimColor;
+          Chart.defaults.font.family = "'JetBrains Mono',monospace";
+          Chart.defaults.font.size = 9;
+
+          var datasets = (c.datasets || []).map(function (ds) {
+            var dataset = {
+              label: ds.label,
+              data: ds.data,
+              borderColor: ds.color,
+              backgroundColor: "rgba(" + hexRgb(ds.color) + ",0.07)",
+              borderWidth: 2.5,
+              tension: 0.35,
+              fill: true,
+              yAxisID: ds.yAxisID,
+              pointBorderColor: "rgba(" + hexRgb(bgColor) + ",0.8)",
+              pointBorderWidth: 2,
+            };
+            if (ds.dashed) dataset.borderDash = [5, 3];
+            if (ds.thresholds) {
+              dataset.pointRadius = 5;
+              dataset.pointBackgroundColor = function (ctx) {
+                var v = ctx.raw;
+                if (v >= ds.thresholds.high) return ds.thresholds.highColor;
+                if (v >= ds.thresholds.mid) return ds.thresholds.midColor;
+                return ds.thresholds.lowColor;
+              };
+            } else {
+              dataset.pointRadius = 3.5;
+              dataset.pointBackgroundColor = ds.color;
+            }
+            return dataset;
+          });
+
+          var scales = {
+            x: {
+              grid: { color: gridColor },
+              ticks: { maxRotation: 35 },
+            },
+          };
+          Object.keys(c.yAxes || {}).forEach(function (id) {
+            var ax = c.yAxes[id];
+            scales[id] = {
+              min: ax.min,
+              max: ax.max,
+              position: ax.position || "left",
+              grid: {
+                color: gridColor,
+                drawOnChartArea: ax.position !== "right",
+              },
+              ticks: {
+                callback: function (v) {
+                  return (ax.prefix || "") + v + (ax.suffix || "");
+                },
+              },
+              title: {
+                display: true,
+                text: ax.label,
+                color: ax.color || "#606878",
+                font: { size: 8 },
+              },
+            };
+          });
+
+          new Chart(cvs, {
+            type: "line",
+            data: { labels: c.labels, datasets: datasets },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: {
+                  display: true,
+                  position: "bottom",
+                  labels: {
+                    usePointStyle: true,
+                    pointStyle: "circle",
+                    boxWidth: 6,
+                    padding: 14,
+                    color: textDimColor,
+                  },
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function (ctx) {
+                      var ds = c.datasets[ctx.datasetIndex];
+                      return (
+                        " " +
+                        ds.label +
+                        ": " +
+                        (ds.yPrefix || "") +
+                        ctx.raw +
+                        (ds.ySuffix || "")
+                      );
+                    },
+                  },
+                },
+              },
+              scales: scales,
+            },
+          });
+        }
+
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     BOOT
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+        var rawJSON = el("arc-data").textContent.trim();
+        if (!rawJSON || rawJSON === "{}") {
+          el("arc-root").innerHTML =
+            '<p style="color:#606878;padding:48px 20px;font-family:monospace;font-size:12px;text-align:center">Paste your arc JSON into &lt;script id="arc-data"&gt; to render a story.</p>';
+          return;
+        }
+
+        var D = JSON.parse(rawJSON);
+
+        applyTheme(D.theme);
+
+        el("el-brand").innerHTML =
+          D.meta && D.meta.brand ? D.meta.brand : "story<em>arc</em>";
+        el("el-live").textContent =
+          D.meta && D.meta.liveLabel ? D.meta.liveLabel : "";
+        document.title =
+          el("el-brand").textContent +
+          " · " +
+          (D.topic && D.topic.title
+            ? D.topic.title.replace(/<[^>]*>/g, "")
+            : "");
+
+        el("arc-root").innerHTML = [
+          renderTopicHeader(D),
+          renderStats(D),
+          renderPanels(D),
+          divider(),
+          renderOverview(D),
+          divider(),
+          renderTimeline(D),
+          divider(),
+          renderChart(D),
+          divider(),
+          renderLenses(D),
+          divider(),
+          renderQuotes(D),
+          divider(),
+          renderTakeaways(D),
+          divider(),
+          renderBlindspots(D),
+          divider(),
+          renderSources(D),
+        ].join("");
+
+        initCarousel();
+        initTimeline();
+        initChart(D);
+      })();
+    </script>
+  </body>
+</html>

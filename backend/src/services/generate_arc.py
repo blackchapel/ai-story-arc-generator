@@ -67,7 +67,7 @@ def get_raw_news(topic, limit):
 def analyze_story(articles: StoryArc, job_id: str):
     print(f"[*] Analyzing narrative arc")
     
-    sys_prompt = generate_news_data.system_instructions
+    sys_prompt = generate_news_data.system_instruction
     user_input = generate_news_data.user_prompt+ json.dumps(articles)
     
     response = client.models.generate_content(
@@ -110,7 +110,7 @@ def generate_comic_panels(analysis: StoryArc, job_id: str):
             )
             
             if response.generated_images:
-                img_path = f"output/{job_id}/panel_{i}.jpg"
+                img_path = f"output/{job_id}/panel-{i}.jpg"
                 with open(img_path, "wb") as f:
                     f.write(response.generated_images[0].image.image_bytes)
             
@@ -154,4 +154,6 @@ def run_pipeline(topic: str, job_id: str):
     print(f"\n[*] Complete Story Arc processed in {runtime}s")
 
 if __name__ == "__main__":
-    run_pipeline("Ram mandir & babri masjid saga", "123")
+    run_pipeline("Pope Leo as first american pope", "123")
+
+    

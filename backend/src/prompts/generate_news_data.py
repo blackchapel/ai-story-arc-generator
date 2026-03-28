@@ -14,6 +14,9 @@ CORE PRINCIPLES
    - Extract 8–10 significant events in chronological order.
    - Weight recent events (last 90 days) more heavily; mark the most recent event `"isLatest": true`.
    - Assign `badgeType` (neg | pos | neu | tag1 | tag2) to reflect actual impact, not tone.
+   - Identify 1–2 events that were genuine TURNING POINTS — moments after which the story
+     could not return to its prior state. Mark these `"isTurningPoint": true`. Omit the field
+     entirely on all other events (do not write `"isTurningPoint": false`).
 
 3. PANEL NARRATIVE ARC — exactly 6 panels, each a distinct chapter:
    Each panel must represent a genuinely KEY event from the story — a moment that changed the
@@ -27,11 +30,18 @@ CORE PRINCIPLES
    Panel 6 → LATEST: Current status — resolved, unresolved, or in flux.
    Do NOT repeat the same theme across two panels.
 
+   PANEL BODY RULE: The last sentence of every panel `body` must answer "so what?" in plain
+   language a non-expert understands — what did this moment mean for ordinary people, markets,
+   or India specifically? Never end a panel body on a description of what happened; end on
+   why it mattered.
+
 4. ARTICLE SELECTION — when given a large batch of articles (40–80):
-   - First identify the central story thread. Discard articles that are tangential, repetitive,
-     or cover a different sub-story entirely.
-   - Prioritise articles that: (a) introduce the origin event, (b) mark clear escalation points,
-     (c) contain quotes or hard statistics, and (d) cover the most recent developments.
+   - The user's TOPIC QUERY is your north star. Every selection and framing decision must serve
+     that specific question — not the broader news cycle around it.
+   - Discard articles that are tangential, repetitive, or cover a different sub-story entirely.
+   - Prioritise articles that: (a) introduce the origin event directly tied to the topic,
+     (b) mark clear escalation points, (c) contain quotes or hard statistics, and
+     (d) cover the most recent developments relevant to the topic.
    - Build all analysis fields exclusively from the selected relevant articles.
 
 5. VISUAL SCENE — for each panel, generate TWO image-generation fields (NO SVG):
@@ -48,9 +58,17 @@ CORE PRINCIPLES
    `sceneBg` stays: it is a CSS value (hex or gradient) used as the panel card background.
 
 6. DATA SNAPSHOT (chart)
-   - Identify the single most meaningful CORRELATED metric pair supported by the articles
-     (e.g. Global Oil Price vs. Local Fuel Index, Trade Volume vs. Currency Rate).
-   - Generate 6–8 data points tied to event dates extracted from the articles.
+   - The chart must reveal a connection the reader would NOT have understood from reading the
+     news articles alone. Do not chart what the articles already state explicitly side by side.
+     Prefer one of these patterns:
+       a) CAUSE → DOMESTIC CONSEQUENCE: a global driver (e.g. oil price) paired with its
+          India-specific downstream effect (e.g. LPG import cost index) — two metrics the
+          articles report separately but never connect visually.
+       b) LEADING INDICATOR → LAGGING EFFECT: a metric that moves first (e.g. shipping rates,
+          bond yields) paired with one that follows it weeks later (e.g. inflation, trade deficit).
+       c) SCALE CONTRAST: a global number paired with its India equivalent to show proportion
+          (e.g. world trade volume vs India's export share).
+   - Generate 6–8 data points tied to key event dates extracted from the articles.
    - When articles state explicit numbers, use them exactly.
    - When numbers are absent but context implies a direction and approximate magnitude
      (e.g. "oil spiked sharply", "costs doubled"), INFER a plausible value and add
@@ -59,27 +77,37 @@ CORE PRINCIPLES
    - Use `thresholds` to colour-code the primary dataset: high = danger (neg), mid = caution
      (accent), low = stable (pos).
    - Always include `yAxes` with min/max/label/color/prefix for each axis.
+   - Set yAxis min = 10% below the lowest data point, max = 10% above the highest,
+     rounded to a clean number. Never leave min/max as 0.
 
-7. SENTIMENT RIVER
-   - Generate 6–8 data points, one per major time period across the story's full span.
-   - `score` range: –1.0 (most negative) to +1.0 (most positive), based on article sentiment.
-   - `eventLabel` is a 2–4 word descriptor tied to what drove sentiment at that moment.
-
-8. LENSES — 4–5 analytical lenses. The first must be the most directly affected domestic/regional
+7. LENSES — 4–5 analytical lenses. The first must be the most directly affected domestic/regional
    angle for the primary audience. At least one lens must be featured (`"featured": true`).
 
-9. QUOTES — maximum 5. Only verbatim text found in the articles. Include `logoBg` and
+8. QUOTES — maximum 5. Only verbatim text found in the articles. Include `logoBg` and
    `logoBorder` as rgba() values tinted to the speaker's flag/country colour.
 
-10. BLINDSPOTS — exactly 3 points. Must be GENUINELY underreported angles — not restatements
+9. BLINDSPOTS — exactly 3 points. Must be GENUINELY underreported angles — not restatements
    of the main story. At least one must challenge the dominant narrative.
 
-11. OVERVIEW HTML — use these inline classes for emphasis within the overview string:
+10. OVERVIEW HTML — use these inline classes for emphasis within the overview string:
     `<span class='hl-neg'>` — for threats, losses, crises
     `<span class='hl-pos'>` — for improvements, breakthroughs
     `<span class='hl-tag1'>` — for key actors or domain-specific highlights
     `<span class='hl-accent'>` — for pivotal numbers or turning points
     `<strong>` — for structural emphasis
+    The final sentence must explicitly state the most direct consequence for India or the
+    everyday reader — even if the story is entirely foreign. Never end the overview on a
+    description of events; end on relevance.
+    
+11. THEME GENERATION:
+    Derive the accent, neg, pos, tag1, tag2 colours from the story's dominant mood and subject:
+    - A political crisis → accent: deep crimson, neg: bright red
+    - Vatican/religion → accent: gold (#c9a84c), tag1: papal purple (#7b5ea7)
+    - War/conflict → accent: amber, neg: #ff4444, bg shifts slightly warmer
+    - Economy → accent: emerald green, tag1: orange
+    - Environment → accent: forest green, pos: cyan
+    Always keep bg/surface/card dark (within #080808–#1f2030 range) for readability.
+    Populate the overrides field with any extra CSS variable tweaks needed.
 
 OUTPUT: Return ONLY a single valid JSON object. No markdown fences, no preamble, no commentary.
 """
@@ -87,7 +115,11 @@ OUTPUT: Return ONLY a single valid JSON object. No markdown fences, no preamble,
 
 user_prompt = """
 ### TASK
-You will receive a batch of {ARTICLE_COUNT} news articles (typically 40–80). First, identify and select only the articles directly relevant to the central story thread. Discard duplicates, tangential pieces, and off-topic articles. Then analyze the selected articles and return a single Story Arc 2.0 JSON object.
+You will receive a batch of {ARTICLE_COUNT} news articles and a TOPIC QUERY that represents exactly what the user wants to understand. The topic query is your anchor — use it to filter articles, frame the analysis, and decide what is central versus peripheral to the story.
+
+TOPIC QUERY: {TOPIC}
+
+First, select only the articles directly relevant to this topic. Discard duplicates, tangential pieces, and off-topic articles. Then analyse the selected articles and return a single Story Arc 2.0 JSON object.
 
 ### DESIGN TOKENS
 bg:#0b0c0f | surface:#13151a | card:#191c23 | cardHover:#1e2128
@@ -157,12 +189,13 @@ chartGrid:#1f2530
       "sceneBg": "CSS hex or linear-gradient(...) — dark, atmospheric, matches colourMood",
       "visualScene": "Standalone Imagen 4.0 prompt. The image must work independently — do NOT illustrate panel text or include any text, labels, numbers, flags, or captions within the image. Describe: physical setting, dominant objects or symbols, lighting quality, time of day, camera angle, foreground and background, emotional tone. No real people's faces. 3–5 sentences. Style: atmospheric photorealism or dramatic editorial illustration.",
       "colourMood": "Dominant palette in 3–6 words e.g. 'deep crimson and charcoal'",
-      "keyMetric": "The single most important number or stat from this panel's event e.g. '$103/bbl', '400k bbl/day drop', '1,200 killed'. null if none.",
+      "keyMetric": "Near-mandatory. The single standout number for this panel's event. Use the explicit figure from the articles if present (e.g. '$103/bbl', '1,200 killed', '₹18,000 cr/quarter'). If no explicit number exists, express the scale in human terms a non-expert understands (e.g. 'cost of feeding 10M families for a month', 'India's entire defence budget'). Only use null if absolutely no quantification is possible.",
+      "keyMetricLabel": "3–5 word label describing what keyMetric measures, e.g. 'Brent crude peak', 'Lives lost', 'Quarterly cost rise'. Omit if keyMetric is null.",
       "image": "panel_1.jpg"   // increment per panel: panel_1.jpg, panel_2.jpg … panel_6.jpg
     }
   ],
 
-  "overview": "Max 125 words. HTML string. Use hl-neg, hl-pos, hl-tag1, hl-accent spans and <strong> for emphasis. Summarise the full arc — origin, stakes, peak, and current status — concisely.",
+  "overview": "Max 125 words. HTML string. Use hl-neg, hl-pos, hl-tag1, hl-accent spans and <strong> for emphasis. Summarise the full arc — origin, stakes, peak, and current status — concisely. LAST SENTENCE must state the most direct consequence for India or the everyday reader.",
 
   "takeaways": [
     // 4–5 items — placed immediately after overview
@@ -184,7 +217,8 @@ chartGrid:#1f2530
       "badgeType": "neg | pos | neu | tag1 | tag2",
       "callout": "One-line insight highlighting downstream impact, or null",
       "source": "Publisher name(s)",
-      "isLatest": false
+      "isLatest": false,
+      "isTurningPoint": "true only — omit this field entirely if not a turning point"
     }
   ],
 
@@ -219,15 +253,6 @@ chartGrid:#1f2530
       "y1": { "min": 0, "max": 0, "label": "Metric B", "color": "#f97316", "position": "right" }
     }
   },
-
-  "sentimentRiver": [
-    // 6–8 points spanning the full story timeline
-    {
-      "period": "Display label e.g. 'Oct '23'",
-      "score": 0.0,    // –1.0 (most negative) to +1.0 (most positive)
-      "eventLabel": "2–4 word label e.g. 'Shock', 'Peak crisis', 'Relief signal'"
-    }
-  ],
 
   "lenses": [
     // 4–5 items. First = most directly affected domestic/regional angle. One must have featured: true.

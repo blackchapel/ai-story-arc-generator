@@ -177,7 +177,7 @@ def run_pipeline(topic: str, job_id: str, jobs=None):
 
         if jobs is not None:
             jobs[job_id]["status"] = "COMPLETED"
-            jobs[job_id]["output_url"] = f"http://localhost:8000/output/{job_id}/index.html"
+            jobs[job_id]["output_url"] = f"https://arc-backend-liart.vercel.app/output/{job_id}/index.html"
 
         runtime = round(time.time() - start_time, 1)
         print(f"\n[*] Complete Story Arc processed in {runtime}s")

@@ -1,6 +1,6 @@
 import type { SubmitJobResponse, StatusResponse } from "@/types/job";
 
-const BASE_URL = "http://localhost:8000";
+const BASE_URL = "https://arc-backend-liart.vercel.app";
 
 // ─── Send prompt → get job_id ─────────────────────────────────────────────────
 

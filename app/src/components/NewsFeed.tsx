@@ -1,18 +1,18 @@
-import React, { memo, useCallback } from 'react'
-import type { NewsArticle } from '@/types'
-import { NewsCard } from './NewsCard'
+import { memo, useCallback } from "react";
+import type { NewsArticle } from "@/types";
+import { NewsCard } from "./NewsCard";
 
 interface NewsFeedProps {
-  articles: NewsArticle[]
-  isBookmarked: (id: string) => boolean
-  onBookmark: (id: string) => void
-  onArticleClick: (id: string) => void
-  onSeeAll: () => void
+  articles: NewsArticle[];
+  isBookmarked: (id: string) => boolean;
+  onBookmark: (id: string) => void;
+  onArticleClick: (id: string) => void;
+  onSeeAll: () => void;
 }
 
 export const NewsFeed = memo<NewsFeedProps>(
   ({ articles, isBookmarked, onBookmark, onArticleClick, onSeeAll }) => {
-    const handleSeeAll = useCallback(() => onSeeAll(), [onSeeAll])
+    const handleSeeAll = useCallback(() => onSeeAll(), [onSeeAll]);
 
     return (
       <section aria-label="Top stories">
@@ -21,10 +21,10 @@ export const NewsFeed = memo<NewsFeedProps>(
           <span
             className="text-[10.5px] font-bold uppercase tracking-[0.09em]"
             style={{
-              background: 'linear-gradient(90deg, #F59E0B 0%, #EF4444 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
+              background: "linear-gradient(90deg, #F59E0B 0%, #EF4444 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
             }}
           >
             Top Stories
@@ -51,8 +51,8 @@ export const NewsFeed = memo<NewsFeedProps>(
           ))}
         </div>
       </section>
-    )
+    );
   },
-)
+);
 
-NewsFeed.displayName = 'NewsFeed'
+NewsFeed.displayName = "NewsFeed";

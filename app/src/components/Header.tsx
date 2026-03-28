@@ -1,22 +1,22 @@
-import React, { memo } from 'react'
+import { memo } from "react";
 
 interface HeaderProps {
-  onMenuClick: () => void
-  onProfileClick: () => void
+  onMenuClick: () => void;
+  onProfileClick: () => void;
 }
 
 export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
   return (
     <header
       className="relative z-30 flex h-[58px] flex-shrink-0 items-center justify-between bg-white px-[18px]"
-      style={{ borderBottom: '1px solid #EBEBEB' }}
+      style={{ borderBottom: "1px solid #EBEBEB" }}
     >
       {/* Rainbow underline */}
       <div
         className="absolute bottom-0 left-0 right-0 h-[2px] opacity-70"
         style={{
           background:
-            'linear-gradient(90deg, #6366F1 0%, #EC4899 30%, #F5A623 55%, #10B981 80%, #0EA5E9 100%)',
+            "linear-gradient(90deg, #6366F1 0%, #EC4899 30%, #F5A623 55%, #10B981 80%, #0EA5E9 100%)",
         }}
         aria-hidden="true"
       />
@@ -47,13 +47,19 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
         onClick={onProfileClick}
         className="flex h-[34px] w-[34px] flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-opacity duration-150 active:opacity-70"
         style={{
-          border: '2px solid transparent',
+          border: "2px solid transparent",
           background:
-            'linear-gradient(white, white) padding-box, linear-gradient(135deg, #F5A623 0%, #EC4899 100%) border-box',
+            "linear-gradient(white, white) padding-box, linear-gradient(135deg, #F5A623 0%, #EC4899 100%) border-box",
         }}
         aria-label="Your profile"
       >
-        <svg width="18" height="19" viewBox="0 0 18 19" fill="none" aria-hidden="true">
+        <svg
+          width="18"
+          height="19"
+          viewBox="0 0 18 19"
+          fill="none"
+          aria-hidden="true"
+        >
           <circle cx="9" cy="6.5" r="3.75" fill="#ABABAB" />
           <path
             d="M1.5 18c0-4.142 3.358-7.5 7.5-7.5s7.5 3.358 7.5 7.5"
@@ -64,7 +70,7 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
         </svg>
       </button>
     </header>
-  )
-})
+  );
+});
 
-Header.displayName = 'Header'
+Header.displayName = "Header";

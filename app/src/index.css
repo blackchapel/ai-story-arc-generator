@@ -1,9 +1,9 @@
+/* ─── Google Fonts ───────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* ─── Google Fonts ───────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
 /* ─── Base resets ────────────────────────────────────────────── */
 @layer base {
@@ -26,8 +26,12 @@
     min-height: 100dvh;
     margin: 0;
     padding: 0;
-    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #E8E8E8;
+    font-family:
+      "DM Sans",
+      -apple-system,
+      BlinkMacSystemFont,
+      sans-serif;
+    background: #e8e8e8;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior: none;
@@ -61,7 +65,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid #6366F1;
+    outline: 2px solid #6366f1;
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -135,14 +139,14 @@
 
   /* Gradient text utility */
   .text-gradient-indigo-pink {
-    background: linear-gradient(90deg, #6366F1 0%, #EC4899 100%);
+    background: linear-gradient(90deg, #6366f1 0%, #ec4899 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .text-gradient-amber-red {
-    background: linear-gradient(90deg, #F59E0B 0%, #EF4444 100%);
+    background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

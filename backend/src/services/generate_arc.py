@@ -7,6 +7,7 @@ import trafilatura
 from pathlib import Path
 from google import genai
 from google.genai import types
+from google.oauth2 import service_account
 from googlenewsdecoder import gnewsdecoder
 from dotenv import load_dotenv
 
@@ -21,11 +22,16 @@ load_dotenv()
 ARTICLE_LIMIT = 10
 TEXT_MODEL = "publishers/google/models/gemini-2.5-flash"
 IMAGE_MODEL = "publishers/google/models/imagen-4.0-generate-001"
+CREDENTIALS = service_account.Credentials.from_service_account_info(
+    json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")),
+    scopes=['https://www.googleapis.com/auth/cloud-platform']
+)
 
 client = genai.Client(
     vertexai=True,
-    project='focal-pager-329818',
-    location='us-central1'
+    project=str(os.environ.get("GOOGLE_PROJECT_ID")),
+    location='us-central1',
+    credentials=CREDENTIALS
 )
 
 # ==========================================
@@ -62,9 +68,9 @@ def get_raw_news(topic, limit):
     return articles
 
 # ==========================================
-# STEP 2: GENERATE JSON DATA
+# STEP 2: GENERATE ARC DATA
 # ==========================================
-def analyze_story(articles: StoryArc, job_id: str, topic: str):
+def generate_arc_data(articles: StoryArc, job_id: str, topic: str):
     print(f"[*] Analyzing narrative arc")
     
     sys_prompt = generate_news_data.system_instruction
@@ -87,7 +93,7 @@ def analyze_story(articles: StoryArc, job_id: str, topic: str):
 # ==========================================
 # STEP 3: IMAGE GENERATION
 # ==========================================
-def generate_comic_panels(analysis: StoryArc, job_id: str):
+def generate_panel_images(analysis: StoryArc, job_id: str):
 
     for i, panel in enumerate(analysis.panels, start=1):
         print(f"[*] Drawing Panel {i}: {panel.head}")
@@ -118,9 +124,9 @@ def generate_comic_panels(analysis: StoryArc, job_id: str):
             print(f"  [X] Failed to draw panel {i}: {e}")
 
 # ==========================================
-# STEP 3: ASSEMBLE HTML
+# STEP 4: ASSEMBLE ARC
 # ==========================================
-def build_static_arc(analysis: StoryArc, job_id: str):
+def assemble_arc(analysis: StoryArc, job_id: str):
     print("[*] Building HTML")
     
     template_path = "public/index.html"
@@ -147,18 +153,40 @@ def build_static_arc(analysis: StoryArc, job_id: str):
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
-def run_pipeline(topic: str, job_id: str):
+def run_pipeline(topic: str, job_id: str, jobs=None):
     start_time = time.time()
     output_path = "output/" + str(job_id)
     Path(output_path).mkdir(parents=True, exist_ok=True)
 
-    articles = get_raw_news(topic, ARTICLE_LIMIT)
-    analysis = analyze_story(articles, job_id, topic)
-    generate_comic_panels(analysis, job_id)
-    build_static_arc(analysis, job_id)
+    try:
+        if jobs is not None:
+            jobs[job_id]["status"] = "FETCHING_ARTICLES"
+        articles = get_raw_news(topic, ARTICLE_LIMIT)
 
-    runtime = round(time.time() - start_time, 1)
-    print(f"\n[*] Complete Story Arc processed in {runtime}s")
+        if jobs is not None:
+            jobs[job_id]["status"] = "ANALYZING_DATA"
+        analysis = generate_arc_data(articles, job_id, topic)
+
+        if jobs is not None:
+            jobs[job_id]["status"] = "GENERATING_IMAGES"
+        generate_panel_images(analysis, job_id)
+
+        if jobs is not None:
+            jobs[job_id]["status"] = "ASSEMBLING"
+        assemble_arc(analysis, job_id)
+
+        if jobs is not None:
+            jobs[job_id]["status"] = "COMPLETED"
+            jobs[job_id]["output_url"] = f"http://localhost:8000/output/{job_id}/index.html"
+
+        runtime = round(time.time() - start_time, 1)
+        print(f"\n[*] Complete Story Arc processed in {runtime}s")
+
+    except Exception as e:
+        if jobs is not None:
+            jobs[job_id]["status"] = "FAILED"
+            jobs[job_id]["error"] = str(e)
+        raise
 
 if __name__ == "__main__":
     run_pipeline("pahalgam attack", "123")

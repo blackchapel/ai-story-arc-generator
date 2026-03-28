@@ -19,16 +19,7 @@ class TopicRequest(BaseModel):
 jobs = {}
 
 def execute_generation(job_id: str, topic: str):
-    try:
-        jobs[job_id]["status"] = "processing"
-        
-        run_pipeline(topic, job_id)
-        
-        jobs[job_id]["status"] = "completed"
-        jobs[job_id]["output_url"] = f"http://localhost:8000/output/{job_id}/index.html"
-    except Exception as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"] = str(e)
+    run_pipeline(topic, job_id, jobs)
 
 @app.post("/generate")
 async def start_generation(request: TopicRequest, background_tasks: BackgroundTasks):

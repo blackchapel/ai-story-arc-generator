@@ -64,11 +64,11 @@ def get_raw_news(topic, limit):
 # ==========================================
 # STEP 2: GENERATE JSON DATA
 # ==========================================
-def analyze_story(articles: StoryArc, job_id: str):
+def analyze_story(articles: StoryArc, job_id: str, topic: str):
     print(f"[*] Analyzing narrative arc")
     
-    sys_prompt = generate_news_data.system_instructions
-    user_input = generate_news_data.user_prompt+ json.dumps(articles)
+    sys_prompt = generate_news_data.system_instruction
+    user_input = generate_news_data.user_prompt + json.dumps(articles) + topic
     
     response = client.models.generate_content(
         model=TEXT_MODEL, 
@@ -127,7 +127,14 @@ def build_static_arc(analysis: StoryArc, job_id: str):
     with open(template_path, "r", encoding="utf-8") as f:
         html_content = f.read()
 
+    # Fix image paths to be relative (same directory as index.html)
     json_data = analysis.model_dump_json()
+    for i in range(1, 7):
+        json_data = json_data.replace(
+            f"output/{job_id}/panel_{i}.jpg", 
+            f"panel_{i}.jpg"
+        )
+
     html_content = html_content.replace("{{ARC_DATA}}", json_data)
 
     output_dir = Path(f"output/{job_id}")
@@ -146,7 +153,7 @@ def run_pipeline(topic: str, job_id: str):
     Path(output_path).mkdir(parents=True, exist_ok=True)
 
     articles = get_raw_news(topic, ARTICLE_LIMIT)
-    analysis = analyze_story(articles, job_id)
+    analysis = analyze_story(articles, job_id, topic)
     generate_comic_panels(analysis, job_id)
     build_static_arc(analysis, job_id)
 
@@ -154,4 +161,6 @@ def run_pipeline(topic: str, job_id: str):
     print(f"\n[*] Complete Story Arc processed in {runtime}s")
 
 if __name__ == "__main__":
-    run_pipeline("Ram mandir & babri masjid saga", "123")
+    run_pipeline("pahalgam attack", "123")
+
+    

@@ -110,7 +110,7 @@ def generate_comic_panels(analysis: StoryArc, job_id: str):
             )
             
             if response.generated_images:
-                img_path = f"output/{job_id}/panel-{i}.jpg"
+                img_path = f"output/{job_id}/panel_{i}.jpg"
                 with open(img_path, "wb") as f:
                     f.write(response.generated_images[0].image.image_bytes)
             
@@ -127,7 +127,14 @@ def build_static_arc(analysis: StoryArc, job_id: str):
     with open(template_path, "r", encoding="utf-8") as f:
         html_content = f.read()
 
+    # Fix image paths to be relative (same directory as index.html)
     json_data = analysis.model_dump_json()
+    for i in range(1, 7):
+        json_data = json_data.replace(
+            f"output/{job_id}/panel_{i}.jpg", 
+            f"panel_{i}.jpg"
+        )
+
     html_content = html_content.replace("{{ARC_DATA}}", json_data)
 
     output_dir = Path(f"output/{job_id}")
@@ -154,6 +161,6 @@ def run_pipeline(topic: str, job_id: str):
     print(f"\n[*] Complete Story Arc processed in {runtime}s")
 
 if __name__ == "__main__":
-    run_pipeline("Pope Leo as first american pope", "123")
+    run_pipeline("zomato ipo", "123")
 
     

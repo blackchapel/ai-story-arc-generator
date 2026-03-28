@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, Dict, Any
+from typing import List, Optional, Dict, Any
 
 # --- Theme and Meta ---
 
@@ -23,18 +23,16 @@ class Theme(BaseModel):
     tag1: str
     tag2: str
     chartGrid: str
-    overrides: Dict[str, Any] = {}
+    overrides: Dict[str, str] = {}
 
 class Meta(BaseModel):
     brand: str = "story<em>arc</em>"
     liveLabel: str
 
-# --- Topic and Sections ---
-
 class Topic(BaseModel):
-    eyebrow: str = Field(..., description="3 segments separated by ' · '. Max 6 words.")
-    title: str = Field(..., description="3-6 word title using <em> for emphasis.")
-    subtitle: str = Field(..., description="One sentence summary. Max 25 words.")
+    eyebrow: str
+    title: str
+    subtitle: str
 
 class SectionInfo(BaseModel):
     num: str
@@ -53,34 +51,37 @@ class Sections(BaseModel):
 # --- Components ---
 
 class Stat(BaseModel):
-    label: str = Field(..., description="Short metric name. Max 3 words.")
-    value: str = Field(..., description="1-4 characters. e.g. 'HIGH', '$92'.")
-    sub: str = Field(..., description="One-line context. Max 5 words.")
+    label: str
+    value: str
+    sub: str
     chipClass: Optional[str] = None
-    valClass: Literal["warn", "up", "ok"]
+    valClass: str  # "warn" | "up" | "ok" | "accent"
 
 class Panel(BaseModel):
-    tag: str = Field(..., description="ALL CAPS chapter label.")
-    tagBg: str = Field(..., description="rgba() background for the tag chip.")
-    tagColor: str = Field(..., description="Hex or name for tag text.")
-    dateColor: str = Field(..., description="Hex matching sentiment.")
-    date: str = Field(..., description="Date with optional ' · Recent' or ' · Now' suffix.")
-    head: str = Field(..., description="One punchy sentence. Max 12 words.")
-    body: str = Field(..., description="2-3 short sentences. Max 35 words.")
-    image: str = Field(..., description="Linear string index e.g. '1', '2'.")
-    visualScene: str = Field(..., description="Detailed AI prompt for the image.")
+    tag: str
+    tagBg: str
+    tagColor: str
+    dateColor: str
+    date: str
+    head: str
+    body: str
+    sceneBg: str = Field(..., description="CSS linear-gradient e.g. 'linear-gradient(135deg,#1a0508 0%,#3d0d0d 100%)'. Never a flat hex.")
+    visualScene: str
     colourMood: str
-    sentiment: Literal["negative", "positive", "neutral", "warning"]
+    keyMetric: Optional[str] = None
+    image: str  # e.g. panel_1.jpg
+    sentiment: str  # "negative" | "positive" | "neutral" | "warning"
 
 class TimelineEvent(BaseModel):
-    type: Literal["neg", "pos", "tag1", "tag2", "hot"]
+    type: str  # "neg" | "pos" | "tag1" | "tag2" | "hot"
     date: str
-    head: str = Field(..., description="Max 12 words.")
-    body: str = Field(..., description="Max 50 words including stats.")
-    callout: Optional[str] = Field(None, description="Audience-specific impact.")
-    badge: str = Field(..., description="Symbol + Label. Max 3 words.")
-    badgeType: Literal["neg", "pos", "tag1", "tag2", "neu"]
+    head: str
+    body: str
+    callout: Optional[str] = None
+    badge: str
+    badgeType: str  # "neg" | "pos" | "tag1" | "tag2" | "neu"
     source: Optional[str] = None
+    isLatest: bool = False
 
 # --- Charting ---
 
@@ -95,7 +96,8 @@ class Dataset(BaseModel):
     label: str
     data: List[float]
     color: str
-    yAxisID: Literal["y", "y1"]
+    yAxisID: str  # "y" | "y1"
+    inferred: bool = False
     thresholds: Optional[Thresholds] = None
     dashed: Optional[bool] = False
 
@@ -105,7 +107,7 @@ class AxisConfig(BaseModel):
     label: str
     color: str
     prefix: Optional[str] = None
-    position: Optional[Literal["right"]] = None
+    position: Optional[str] = None  # "right" or omit for left
 
 class Chart(BaseModel):
     title: str
@@ -114,36 +116,43 @@ class Chart(BaseModel):
     datasets: List[Dataset]
     yAxes: Dict[str, AxisConfig]
 
+# --- Sentiment River ---
+
+class SentimentPoint(BaseModel):
+    period: str
+    score: float  # -1.0 to +1.0
+    eventLabel: str
+
 # --- Analysis & Insights ---
 
 class Lens(BaseModel):
     cat: str
     icon: str
-    featured: Optional[bool] = False
-    head: str = Field(..., description="Max 8 words.")
-    body: str = Field(..., description="Max 40 words mechanism explanation.")
+    featured: bool = False
+    head: str
+    body: str
     metricVal: str
     metricLabel: str
-    metricType: Literal["warn", "up", "ok"]
+    metricType: str  # "warn" | "up" | "ok"
 
 class Quote(BaseModel):
     flag: str
     logoBg: str
     logoBorder: str
     accentColor: Optional[str] = None
-    text: str = Field(..., description="Exact quote. Max 25 words.")
-    attr: str = Field(..., description="Name — Role · Date.")
+    text: str
+    attr: str
 
 class Takeaway(BaseModel):
-    type: Optional[Literal["tag1", "tag2"]] = None
-    head: str = Field(..., description="Max 15 words.")
-    body: str = Field(..., description="Max 50 words with <strong> highlights.")
+    type: Optional[str] = None  # "tag1" | "tag2" | "neg" | "pos"
+    head: str
+    body: str
 
 class Blindspot(BaseModel):
     icon: str = "🔦"
-    tag: str = Field(..., description="Actor · Coverage status.")
-    head: str = Field(..., description="Provocative sentence. Max 12 words.")
-    body: str = Field(..., description="Explanation of the gap. Max 50 words.")
+    tag: str
+    head: str
+    body: str
 
 # --- Root Model ---
 
@@ -154,11 +163,12 @@ class StoryArc(BaseModel):
     sections: Sections
     stats: List[Stat]
     panels: List[Panel]
-    overview: str = Field(..., description="HTML paragraph, 150-200 words.")
+    overview: str
+    takeaways: List[Takeaway]
     timeline: List[TimelineEvent]
     chart: Chart
+    sentimentRiver: List[SentimentPoint]
     lenses: List[Lens]
     quotes: List[Quote]
-    takeaways: List[Takeaway]
     blindspots: List[Blindspot]
     sources: List[str]

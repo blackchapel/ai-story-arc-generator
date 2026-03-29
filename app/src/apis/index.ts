@@ -1,6 +1,6 @@
 import type { SubmitJobResponse, StatusResponse } from "@/types/job";
 
-const BASE_URL = "https://arc-backend-liart.vercel.app";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // ─── Send prompt → get job_id ─────────────────────────────────────────────────
 

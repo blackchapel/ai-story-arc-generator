@@ -7,8 +7,8 @@ export type PollerState =
   | { phase: "done"; htmlContent: string }
   | { phase: "error"; message: string };
 
-const POLL_INTERVAL_MS = 2_000; // 2 s between polls
-const MAX_POLL_ATTEMPTS = 150; // 5 min ceiling at 2 s cadence
+const POLL_INTERVAL_MS = 2000; // 2 s between polls
+const MAX_POLL_ATTEMPTS = 1000; // 5 min ceiling at 2 s cadence
 
 export function useJobPoller(jobId: string) {
   const [state, setState] = useState<PollerState>({

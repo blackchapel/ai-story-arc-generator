@@ -86,8 +86,8 @@ def generate_arc_data(articles: StoryArc, job_id: str, topic: str):
         )
     )
     
-    with open(f"output/{job_id}/news.json", "w") as f:
-        json.dump(response.parsed.model_dump(), f, indent=4)
+    with open(f"output/{job_id}/news.json", "w", encoding="utf-8") as f:
+        json.dump(response.parsed.model_dump(), f, indent=4, ensure_ascii=False)
         
     return response.parsed
 
@@ -216,7 +216,8 @@ def assemble_arc(analysis: StoryArc, job_id: str):
         html_content = f.read()
 
     # Images are already base64 data URIs in analysis.panels[].image
-    json_data = analysis.model_dump_json()
+    # Use ensure_ascii=True so all emojis/unicode are \uXXXX escaped (ASCII-safe for any host/CDN)
+    json_data = json.dumps(analysis.model_dump(), ensure_ascii=True)
     html_content = html_content.replace("{{ARC_DATA}}", json_data)
 
     output_dir = Path(f"output/{job_id}")

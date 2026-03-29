@@ -10,18 +10,19 @@ import {
   Toast,
   ProcessingScreen,
   ResultScreen,
+  StoryViewer,
 } from "@/components";
 import { useBookmarks } from "@/hooks/useBookmarks";
 import { useKeyboardOffset } from "@/hooks/useKeyboardOffset";
 import { useToast } from "@/hooks/useToast";
 import { sendPrompt } from "@/apis";
 import { STORIES, TOPIC_FILTERS, NEWS_ARTICLES, PROMPT_CHIPS } from "@/data";
-import type { NewsArticle } from "@/types";
+import type { NewsArticle, Story } from "@/types";
 import type { AppView } from "@/types/job";
 
 export default function App() {
   const [view, setView] = useState<AppView>({ screen: "home" });
-
+  const [openStory, setOpenStory] = useState<Story | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
 
@@ -73,7 +74,11 @@ export default function App() {
     (id: string) => setActiveFilter(id),
     [],
   );
-  const handleStoryClick = useCallback((_id: string) => {}, []);
+  const handleStoryClick = useCallback((id: string) => {
+    const s = STORIES.find((story) => story.id === id) ?? null;
+    setOpenStory(s);
+  }, []);
+  const handleStoryClose = useCallback(() => setOpenStory(null), []);
   const handleAddStory = useCallback(() => {}, []);
   const handleArticleClick = useCallback((_id: string) => {}, []);
   const handleSeeAll = useCallback(() => {}, []);
@@ -83,6 +88,10 @@ export default function App() {
     <>
       {/* Global error toast — above every screen */}
       <Toast toast={toast} onDismiss={dismissToast} />
+
+      {openStory && (
+        <StoryViewer story={openStory} onClose={handleStoryClose} />
+      )}
 
       {/* Processing screen */}
       {view.screen === "processing" && (

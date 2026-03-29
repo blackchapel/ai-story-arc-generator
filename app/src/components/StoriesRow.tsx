@@ -1,12 +1,39 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import type { Story } from "@/types";
+
+// Fetch feed.json once and return a label→firstImageUrl map
+function useFeedPreviews(): Map<string, string> {
+  const [map, setMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    fetch("/feed/feed.json")
+      .then((r) => r.json())
+      .then(
+        (
+          data: Array<{ category: string; events: Array<{ image: string }> }>,
+        ) => {
+          const m = new Map<string, string>();
+          for (const cat of data) {
+            if (cat.events?.[0]?.image) {
+              m.set(cat.category.toLowerCase(), `/feed/${cat.events[0].image}`);
+            }
+          }
+          setMap(m);
+        },
+      )
+      .catch(() => {
+        /* no preview — graceful fallback to gradient */
+      });
+  }, []);
+  return map;
+}
 
 interface StoryCardProps {
   story: Story;
+  previewImage?: string;
   onClick: (id: string) => void;
 }
 
-const StoryCard = memo<StoryCardProps>(({ story, onClick }) => {
+const StoryCard = memo<StoryCardProps>(({ story, previewImage, onClick }) => {
   const handleClick = useCallback(() => onClick(story.id), [onClick, story.id]);
 
   return (
@@ -16,6 +43,22 @@ const StoryCard = memo<StoryCardProps>(({ story, onClick }) => {
       style={{ background: story.gradient }}
       aria-label={`${story.label} story`}
     >
+      {/* Real photo preview */}
+      {previewImage && (
+        <img
+          src={previewImage}
+          alt=""
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center top",
+          }}
+        />
+      )}
       {/* Vignette overlay */}
       <div
         className="absolute inset-0"
@@ -57,6 +100,7 @@ interface StoriesRowProps {
 
 export const StoriesRow = memo<StoriesRowProps>(
   ({ stories, onStoryClick, onAddStory }) => {
+    const feedPreviews = useFeedPreviews();
     return (
       <section
         className="flex-shrink-0 border-b border-[#EBEBEB] pb-3 pt-[14px]"
@@ -72,7 +116,7 @@ export const StoriesRow = memo<StoriesRowProps>(
             backgroundClip: "text",
           }}
         >
-          Following
+          Story Panels
         </p>
 
         {/* Scrollable row */}
@@ -124,7 +168,11 @@ export const StoriesRow = memo<StoriesRowProps>(
           {/* Story cards */}
           {stories.map((story) => (
             <div key={story.id} role="listitem">
-              <StoryCard story={story} onClick={onStoryClick} />
+              <StoryCard
+                story={story}
+                previewImage={feedPreviews.get(story.label.toLowerCase())}
+                onClick={onStoryClick}
+              />
             </div>
           ))}
         </div>

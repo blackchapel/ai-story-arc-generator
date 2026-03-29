@@ -1,38 +1,36 @@
 import os
+import uuid
 import json
 import time
 import base64
 import requests
 import feedparser
 import trafilatura
+from datetime import datetime, timezone
 from pathlib import Path
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account
 from googlenewsdecoder import gnewsdecoder
 from dotenv import load_dotenv
 
-from src.models.story_arc import StoryArc
-from src.prompts import generate_news_data
+from src.models.arc_model import ArcModel
+from src.prompts import generate_arc_data_prompt
+from src.schemas.output_schema import OutputSchema
+from src.database import SessionLocal
 
 load_dotenv()
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
-ARTICLE_LIMIT = 20
+ARTICLE_LIMIT = 10
 TEXT_MODEL = "publishers/google/models/gemini-2.5-flash"
 IMAGE_MODEL = "publishers/google/models/imagen-4.0-generate-001"
-# CREDENTIALS = service_account.Credentials.from_service_account_info(
-#     json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")),
-#     scopes=['https://www.googleapis.com/auth/cloud-platform']
-# )
 
 client = genai.Client(
     vertexai=True,
     project=str(os.environ.get("GOOGLE_PROJECT_ID")),
     location='us-central1',
-    # credentials=CREDENTIALS
 )
 
 # ==========================================
@@ -57,7 +55,6 @@ def get_raw_news(topic, limit):
             content = trafilatura.extract(resp.text)
             
             if content and len(content) > 500:
-                # Include published date so Gemini can weight articles by recency
                 pub_date = getattr(entry, "published", "") or getattr(entry, "updated", "")
                 articles.append({
                     "title": entry.title,
@@ -66,30 +63,28 @@ def get_raw_news(topic, limit):
                     "full_text": content[:5000]
                 })
                 print(f" [✓] Extracted: {entry.title[:50]}...")
-            time.sleep(0.5)
         except Exception:
             continue
     return articles
 
 # ==========================================
-# STEP 2: GENERATE ARC DATA
+# STEP 2a: GENERATE ARC DATA
 # ==========================================
-def generate_arc_data(articles: StoryArc, job_id: str, topic: str):
+def generate_arc_data(articles: ArcModel, job_id: str, topic: str):
     print(f"[*] Analyzing narrative arc")
-    from datetime import datetime, timezone
+
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
-    sys_prompt = generate_news_data.system_instruction
-    # Prepend today's date so Gemini can correctly identify which articles are recent
+    sys_prompt = generate_arc_data_prompt.system_instruction
     date_context = f"TODAY'S DATE: {today}. Articles with a 'published' date close to today are the most recent and must be prioritised.\n\n"
-    user_input = date_context + generate_news_data.user_prompt + json.dumps(articles) + topic
+    user_input = date_context + generate_arc_data_prompt.user_prompt + json.dumps(articles) + topic
     
     response = client.models.generate_content(
         model=TEXT_MODEL, 
         contents=[sys_prompt, user_input],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
-            response_schema=StoryArc
+            response_schema=ArcModel
         )
     )
     
@@ -101,9 +96,9 @@ def generate_arc_data(articles: StoryArc, job_id: str, topic: str):
 # ==========================================
 # STEP 2b: VALIDATE & FIX EMPTY SECTIONS
 # ==========================================
-def validate_and_fix_arc(analysis: StoryArc, topic: str):
+def validate_and_fix_arc(analysis: ArcModel):
     """Ensure all sections have at least placeholder data to prevent empty renders."""
-    from src.models.story_arc import Quote, Lens, Blindspot, Takeaway, SentimentPoint
+    from src.models.arc_model import Quote, Lens, Blindspot, Takeaway, SentimentPoint
     
     empty_sections = []
     
@@ -179,7 +174,7 @@ def validate_and_fix_arc(analysis: StoryArc, topic: str):
 # ==========================================
 # STEP 3: IMAGE GENERATION
 # ==========================================
-def generate_panel_images(analysis: StoryArc, job_id: str):
+def generate_panel_images(analysis: ArcModel):
     print(f"[*] Generating panel images...")
     
     for i, panel in enumerate(analysis.panels, start=1):
@@ -204,7 +199,6 @@ def generate_panel_images(analysis: StoryArc, job_id: str):
             
             if response.generated_images:
                 img_bytes = response.generated_images[0].image.image_bytes
-                # Convert to base64 and store as data URI
                 img_base64 = base64.b64encode(img_bytes).decode('utf-8')
                 panel.image = f"data:image/jpeg;base64,{img_base64}"
                 print(f"  [✓] Panel {i} embedded")
@@ -215,15 +209,13 @@ def generate_panel_images(analysis: StoryArc, job_id: str):
 # ==========================================
 # STEP 4: ASSEMBLE ARC
 # ==========================================
-def assemble_arc(analysis: StoryArc, job_id: str):
+def assemble_arc(analysis: ArcModel, job_id: str):
     print("[*] Building HTML")
     
     template_path = "public/index.html"
     with open(template_path, "r", encoding="utf-8") as f:
         html_content = f.read()
 
-    # Images are already base64 data URIs in analysis.panels[].image
-    # Use ensure_ascii=True so all emojis/unicode are \uXXXX escaped (ASCII-safe for any host/CDN)
     json_data = json.dumps(analysis.model_dump(), ensure_ascii=True)
     html_content = html_content.replace("{{ARC_DATA}}", json_data)
 
@@ -234,6 +226,39 @@ def assemble_arc(analysis: StoryArc, job_id: str):
         f.write(html_content)
 
     print(f"[✓] Saved to {output_file}")
+
+    return html_content
+
+# ==========================================
+# STEP 5: SAVE ARC TO DB
+# ==========================================
+def save_arc_to_db(job_id: str, title: str, description: str, img_base64: str, source_names: list[str], tag: str, tag_text_color: str, tag_background_color: str, html_content: str):
+    db = SessionLocal()
+    try:
+        new_output = OutputSchema(
+            id=uuid.UUID(job_id),
+            title=title,
+            description=description,
+            img=img_base64,
+            source_names=source_names,
+            tag=tag,
+            tag_text_color=tag_text_color,
+            tag_background_color=tag_background_color,
+            html=html_content
+        )
+        
+        db.add(new_output)
+        db.commit()
+
+        db.refresh(new_output)
+        return new_output.id
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving to database: {e}")
+        raise e
+    finally:
+        db.close()
 
 # ==========================================
 # MAIN EXECUTION
@@ -251,17 +276,26 @@ def run_pipeline(topic: str, job_id: str, jobs=None):
         if jobs is not None:
             jobs[job_id]["status"] = "ANALYZING_DATA"
         analysis = generate_arc_data(articles, job_id, topic)
-        
-        # Validate and fix empty sections
-        analysis = validate_and_fix_arc(analysis, topic)
+        analysis = validate_and_fix_arc(analysis)
 
         if jobs is not None:
             jobs[job_id]["status"] = "GENERATING_IMAGES"
-        generate_panel_images(analysis, job_id)
+        generate_panel_images(analysis)
 
         if jobs is not None:
             jobs[job_id]["status"] = "ASSEMBLING"
-        assemble_arc(analysis, job_id)
+        html_content = assemble_arc(analysis, job_id)
+        save_arc_to_db(
+            job_id,
+            analysis.topic.title,
+            analysis.topic.subtitle,
+            analysis.panels[0].image,
+            analysis.sources,
+            analysis.topic.eyebrow.split(".")[0].strip(),
+            "#1e90ff",
+            "#60a5fa",
+            html_content
+        )
 
         if jobs is not None:
             jobs[job_id]["status"] = "COMPLETED"
@@ -277,6 +311,6 @@ def run_pipeline(topic: str, job_id: str, jobs=None):
         raise
 
 if __name__ == "__main__":
-    run_pipeline("israel vs iran", "123")
+    run_pipeline("palgham attack", "eca2d775-b939-4c59-b97a-65f099bf76a6")
 
     

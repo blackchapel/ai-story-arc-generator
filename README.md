@@ -142,7 +142,8 @@ User enters topic
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-![Architecture Diagram](./assets/archi-diagram.png)
+![Architecture Diagram 1](./assets/archi-diagram-1.png)
+![Architecture Diagram 2](./assets/archi-diagram-2.png)
 
 ### The Prompt Engineering Layer
 

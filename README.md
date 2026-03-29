@@ -36,6 +36,19 @@ Type *"Russia's war in Ukraine"* or *"India 2024 elections"* or *"Adani vs Hinde
 
 ---
 
+## Installing arc
+
+arc is a **Progressive Web App (PWA)** — install it on your phone or desktop and use it like a native app, with no app store required.
+
+### On Android (Chrome)
+
+1. Open **[arc-frontend-silk.vercel.app](https://arc-frontend-silk.vercel.app/)** in Chrome
+2. You should see an **"Add to Home Screen"** banner at the bottom — tap **Install**
+3. If the banner does not appear: tap the **three dots (⋮)** in the top-right corner of Chrome, then tap **"Add to Home Screen"**
+4. arc will appear on your home screen and open as a full-screen app
+
+---
+
 ## Live Demo
 
 🌐 **[arc-frontend-silk.vercel.app](https://arc-frontend-silk.vercel.app/)**

@@ -142,6 +142,8 @@ User enters topic
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+![Architecture Diagram](./assets/archi-diagram.png)
+
 ### The Prompt Engineering Layer
 
 The intelligence quality of each arc is driven by a carefully engineered two-variable prompt system:
@@ -211,25 +213,25 @@ Save and retrieve bookmarked stories for the current user session.
 
 ---
 
-> *(Replace the placeholders below with actual screenshot image paths or URLs)*
+## Screenshots
 
 **Home Feed**
-![Home Feed](./screenshots/home-feed.png)
+![Home Feed](./assets/home-feed.png)
 
-**Story Arc — Header & Stats**
-![Arc Header](./screenshots/arc-header.png)
+**Story Arc: Header & Stats**
+![Arc Header](./assets/arc-header.png)
 
-**Story Arc — Panels**
-![Arc Panels](./screenshots/arc-panels.png)
+**Story Arc: Panels**
+![Arc Panels](./assets/arc-panels.png)
 
-**Story Arc — Timeline**
-![Arc Timeline](./screenshots/arc-timeline.png)
+**Story Arc: Timeline**
+![Arc Timeline](./assets/arc-timeline.png)
 
-**Story Arc — Data Snapshot Chart**
-![Arc Chart](./screenshots/arc-chart.png)
+**Story Arc: Data Snapshot Chart**
+![Arc Chart](./assets/arc-chart.png)
 
 **Loading State**
-![Loading](./screenshots/arc-loading.png)
+![Loading](./assets/arc-loading.png)
 
 ---
 

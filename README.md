@@ -7,7 +7,7 @@
 Problem Statement #8 · AI-Native News Experience
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-arc--frontend--silk.vercel.app-6366f1?style=for-the-badge&logo=vercel)](https://arc-frontend-silk.vercel.app/)
-[![Backend](https://img.shields.io/badge/Backend-FastAPI%20on%20GCP-4285F4?style=for-the-badge&logo=googlecloud)](https://arc-frontend-silk.vercel.app/)
+[![Backend](https://img.shields.io/badge/Backend-FastAPI%20on%20GCP-4285F4?style=for-the-badge&logo=googlecloud)](https://arc-backend-199119995070.us-central1.run.app/)
 [![Built With](https://img.shields.io/badge/Built%20With-Gemini%202.5%20Flash%20%2B%20Imagen%204.0-f0b429?style=for-the-badge&logo=google)](https://arc-frontend-silk.vercel.app/)
 
 </div>
@@ -85,58 +85,61 @@ A transparent, step-by-step loader shows exactly what arc is doing:
 
 ```
 User enters topic
-       │
-       ▼
-┌─────────────────────────────────────────────────────┐
-│                   FRONTEND (React)                   │
-│  Topic input → Loading states → Arc render           │
-└────────────────────┬────────────────────────────────┘
-                     │ POST /generate-arc
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│                  BACKEND (FastAPI / GCP)             │
-│                                                      │
-│  1. FETCH (RAG Pipeline)                             │
-│     ┌─────────────────────────────────────────────┐ │
-│     │  SOURCE A: Vector DB (Semantic Retrieval)   │ │
-│     │  Topic query → text embeddings              │ │
-│     │  Similarity search over stored article      │ │
-│     │  vectors → historically relevant chunks     │ │
-│     └─────────────────────────────────────────────┘ │
-│     ┌─────────────────────────────────────────────┐ │
-│     │  SOURCE B: Google News RSS (Live Fetch)     │ │
-│     │  Real URLs decoded via gnewsdecoder         │ │
-│     │  Full text extracted via trafilatura        │ │
-│     │  40–80 fresh articles per topic             │ │
-│     └─────────────────────────────────────────────┘ │
-│     Vector DB results + RSS results → combined       │
-│     context passed to Gemini prompt                  │
-│                                                      │
-│  2. ANALYSE                                          │
-│     Combined context + topic query → Gemini 2.5 Flash│
-│     System prompt: Story Arc analyst persona         │
-│     Output: structured Story Arc 2.0 JSON            │
-│     (panels, timeline, chart, lenses, quotes, etc.)  │
-│                                                      │
-│  3. ILLUSTRATE                                       │
-│     visualScene prompts → Imagen 4.0                 │
-│     6 editorial images generated per arc             │
-│     Stored and referenced as panel_1.jpg … panel_6   │
-│                                                      │
-│  4. PERSIST                                          │
-│     Full arc JSON + image refs → PostgreSQL          │
-│     Arc retrievable by ID for future visits          │
-│                                                      │
-│  5. ASSEMBLE                                         │
-│     JSON + image references merged                   │
-│     Full arc payload returned to frontend            │
-└─────────────────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│              FRONTEND renders Story Arc              │
-│  8 sections rendered from structured JSON payload    │
-└─────────────────────────────────────────────────────┘
+            │
+            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                          FRONTEND (React + Vite)                     │
+│          Topic input  ──►  Loading states  ──►  Arc render           │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │  POST /generate-arc
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        BACKEND  (FastAPI / GCP Cloud Run)            │
+│                                                                      │
+│  1. FETCH  ──  RAG Pipeline                                          │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  SOURCE A: Vector DB (Semantic Retrieval)                    │    │
+│  │  Topic query → text embeddings → similarity search           │    │
+│  │  Output: historically relevant article chunks                │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  SOURCE B: Google News RSS (Live Fetch)                      │    │
+│  │  feedparser → gnewsdecoder → trafilatura                     │    │
+│  │  Output: 40–80 fresh full-text articles per topic            │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│       Vector DB results + RSS results → combined context             │
+│                                                                      │
+│  2. ANALYSE                                                          │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  Combined context + topic query → Gemini 2.5 Flash           │    │
+│  │  system_instruction + user_prompt → Story Arc 2.0 JSON       │    │
+│  │  Sections: panels, timeline, chart, lenses, quotes,          │    │
+│  │            takeaways, blindspots, stats                      │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  3. ILLUSTRATE                                                       │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  visualScene prompts (one per panel) → Imagen 4.0            │    │
+│  │  6 standalone editorial images generated per arc             │    │
+│  │  Referenced as panel_1.jpg through panel_6.jpg               │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  4. PERSIST                                                          │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  Full arc JSON + image references → PostgreSQL               │    │
+│  │  Arc stored by ID, retrievable for future visits             │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  5. ASSEMBLE                                                         │
+│       JSON payload + image references merged                         │
+│       Full arc returned to frontend                                  │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                       FRONTEND renders Story Arc                     │
+│              8 sections rendered from structured JSON payload        │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### The Prompt Engineering Layer
@@ -396,9 +399,9 @@ Built with equal parts by three contributors:
 
 | Name | GitHub |
 |---|---|
-| RD *(name to be filled)* | [@username](https://github.com/username) |
-| KC *(name to be filled)* | [@username](https://github.com/username) |
-| VP *(name to be filled)* | [@username](https://github.com/username) |
+| Rosita D'mello | [@rosita-dmello](https://github.com/rosita-dmello) |
+| Kunal C | [@blackchapel](https://github.com/blackchapel) |
+| Vidhita Pai | [@vidhitapai31](https://github.com/vidhitapai31) |
 
 ---
 

@@ -12,7 +12,14 @@ CORE PRINCIPLES
 
 2. TIMELINE WEIGHTING
    - Extract 8-10 significant events in chronological order.
-   - Weight recent events (last 90 days) more heavily; mark the most recent event `"isLatest": true`.
+   - RECENCY FIRST: At least 6 of the 8-10 timeline events must be from the last 12 months.
+     Recent developments (last 90 days) are the priority - always include them if present in
+     the articles.
+   - HISTORICAL CONTEXT (max 2 entries): You may include 1-2 older foundational events if they
+     are genuinely essential for a reader to understand WHY current events are happening. These
+     must be directly cited or clearly implied in the provided articles - do NOT pull from
+     training knowledge events that the articles never mention.
+   - Weight recent events (last 90 days) most heavily. Mark the most recent event `"isLatest": true`.
    - Assign `badgeType` (neg | pos | neu | tag1 | tag2) to reflect actual impact, not tone:
      * LIGHT MODE stories: Use `pos` for growth/adoption/success milestones. Use `neg` only for setbacks/regulatory hurdles. Use `accent` for key partnerships/launches.
      * DARK MODE stories: Use `neg` for losses/crises/casualties. Use `pos` for rare positive developments. Use `accent` for turning points regardless of valence.
@@ -24,7 +31,10 @@ CORE PRINCIPLES
    Each panel must represent a genuinely KEY event from the story - a moment that changed the
    trajectory, not just a notable occurrence. Be selective: if a development is covered in the
    timeline, it only earns a panel if it is pivotal to understanding the full arc.
-   Panel 1 - ORIGIN: The triggering event or root cause.
+   Panel 1 - ORIGIN: The catalyst that started or most recently reignited this story cycle.
+     Prefer a recent trigger (within the last 12 months) if one exists in the articles. Only
+     go further back if no recent origin exists AND the older event is the direct, unambiguous
+     root cause still driving today's situation.
    Panel 2 - ESCALATION: First major intensification.
    Panel 3 - CRISIS PEAK: The most acute moment of conflict, loss, or disruption.
    Panel 4 - STRUCTURAL SHIFT: A development that permanently changed the landscape.

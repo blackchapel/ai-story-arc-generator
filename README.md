@@ -163,8 +163,6 @@ Key prompt design decisions:
 
 ## API Reference
 
-Base URL: `https://[your-gcp-backend-url]` *(update with deployed URL)*
-
 ### `POST /generate-arc`
 Triggers the full arc generation pipeline for a given topic.
 

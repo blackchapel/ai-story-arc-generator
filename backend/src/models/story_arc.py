@@ -202,7 +202,7 @@ class StoryArc(BaseModel):
     sections: Sections
     stats: List[Stat]
     panels: List[Panel]
-    overview: str
+    overview: str = Field(..., description="HTML overview string, max 200 words.", max_length=2000)
     takeaways: List[Takeaway]
     timeline: List[TimelineEvent]
     chart: Chart

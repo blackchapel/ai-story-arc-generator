@@ -20,7 +20,7 @@ load_dotenv()
 # ==========================================
 # CONFIGURATION
 # ==========================================
-ARTICLE_LIMIT = 10
+ARTICLE_LIMIT = 20
 TEXT_MODEL = "publishers/google/models/gemini-2.5-flash"
 IMAGE_MODEL = "publishers/google/models/imagen-4.0-generate-001"
 # CREDENTIALS = service_account.Credentials.from_service_account_info(
@@ -57,9 +57,12 @@ def get_raw_news(topic, limit):
             content = trafilatura.extract(resp.text)
             
             if content and len(content) > 500:
+                # Include published date so Gemini can weight articles by recency
+                pub_date = getattr(entry, "published", "") or getattr(entry, "updated", "")
                 articles.append({
                     "title": entry.title,
                     "source": entry.source.get('title', 'Unknown'),
+                    "published": pub_date,
                     "full_text": content[:5000]
                 })
                 print(f" [✓] Extracted: {entry.title[:50]}...")
@@ -73,9 +76,13 @@ def get_raw_news(topic, limit):
 # ==========================================
 def generate_arc_data(articles: StoryArc, job_id: str, topic: str):
     print(f"[*] Analyzing narrative arc")
-    
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%B %d, %Y")
+
     sys_prompt = generate_news_data.system_instruction
-    user_input = generate_news_data.user_prompt + json.dumps(articles) + topic
+    # Prepend today's date so Gemini can correctly identify which articles are recent
+    date_context = f"TODAY'S DATE: {today}. Articles with a 'published' date close to today are the most recent and must be prioritised.\n\n"
+    user_input = date_context + generate_news_data.user_prompt + json.dumps(articles) + topic
     
     response = client.models.generate_content(
         model=TEXT_MODEL, 
@@ -270,6 +277,6 @@ def run_pipeline(topic: str, job_id: str, jobs=None):
         raise
 
 if __name__ == "__main__":
-    run_pipeline("us election 2024", "123")
+    run_pipeline("israel vs iran", "123")
 
     

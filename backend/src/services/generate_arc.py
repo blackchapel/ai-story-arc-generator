@@ -22,16 +22,16 @@ load_dotenv()
 ARTICLE_LIMIT = 10
 TEXT_MODEL = "publishers/google/models/gemini-2.5-flash"
 IMAGE_MODEL = "publishers/google/models/imagen-4.0-generate-001"
-CREDENTIALS = service_account.Credentials.from_service_account_info(
-    json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")),
-    scopes=['https://www.googleapis.com/auth/cloud-platform']
-)
+# CREDENTIALS = service_account.Credentials.from_service_account_info(
+#     json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")),
+#     scopes=['https://www.googleapis.com/auth/cloud-platform']
+# )
 
 client = genai.Client(
     vertexai=True,
     project=str(os.environ.get("GOOGLE_PROJECT_ID")),
     location='us-central1',
-    credentials=CREDENTIALS
+    # credentials=CREDENTIALS
 )
 
 # ==========================================

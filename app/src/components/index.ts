@@ -8,3 +8,4 @@ export { SideMenu } from "./SideMenu";
 export { Toast } from "./Toast";
 export { ProcessingScreen } from "./ProcessingScreen";
 export { ResultScreen } from "./ResultScreen";
+export { StoryViewer } from "./StoryViewer";

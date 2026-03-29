@@ -31,7 +31,7 @@ export const Toast = memo<ToastProps>(({ toast, onDismiss }) => {
       role="alert"
       aria-live="assertive"
       aria-atomic="true"
-      className="pointer-events-none fixed left-1/2 top-0 z-[200] w-full max-w-[390px] -translate-x-1/2 px-4"
+      className="pointer-events-none fixed left-1/2 top-0 z-[200] w-full -translate-x-1/2 px-4"
       style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
     >
       <div

@@ -110,7 +110,7 @@ export const StoriesRow = memo<StoriesRowProps>(
             backgroundClip: "text",
           }}
         >
-          Following
+          Story Panels
         </p>
 
         {/* Scrollable row */}

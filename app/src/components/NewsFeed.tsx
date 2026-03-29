@@ -27,7 +27,7 @@ export const NewsFeed = memo<NewsFeedProps>(
               backgroundClip: "text",
             }}
           >
-            Top Stories
+            Story Arcs
           </span>
           <button
             onClick={handleSeeAll}

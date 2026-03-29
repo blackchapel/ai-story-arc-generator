@@ -1,6 +1,5 @@
 import React, { memo, useCallback } from "react";
 import type { NewsArticle } from "@/types";
-import { CATEGORY_META } from "@/data";
 
 interface NewsCardProps {
   article: NewsArticle;
@@ -31,8 +30,6 @@ BookmarkIcon.displayName = "BookmarkIcon";
 
 export const NewsCard = memo<NewsCardProps>(
   ({ article, index, isBookmarked, onBookmark, onClick }) => {
-    const meta = CATEGORY_META[article.category];
-
     const handleBookmark = useCallback(
       (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -61,7 +58,7 @@ export const NewsCard = memo<NewsCardProps>(
       >
         {/* Left accent bar */}
         <div
-          className={`absolute left-[18px] top-[18px] w-[2.5px] rounded-sm ${meta.accentBar}`}
+          className={`absolute left-[18px] top-[18px] w-[2.5px] rounded-sm bg-${article.tag_text_color}`}
           style={{ bottom: "18px" }}
           aria-hidden="true"
         />
@@ -72,8 +69,7 @@ export const NewsCard = memo<NewsCardProps>(
           style={{ boxShadow: `inset 0 3px 0 var(--thumb-color, transparent)` }}
         >
           <img
-            src={article.imageUrl}
-            alt={article.imageAlt}
+            src={article.img}
             loading="lazy"
             width={86}
             height={86}
@@ -86,9 +82,9 @@ export const NewsCard = memo<NewsCardProps>(
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Category tag */}
           <span
-            className={`mb-[5px] inline-flex w-fit items-center rounded-[4px] px-[7px] py-[2px] text-[9px] font-extrabold uppercase tracking-[0.08em] ${meta.color} ${meta.bg}`}
+            className={`mb-[5px] inline-flex w-fit items-center rounded-[4px] px-[7px] py-[2px] text-[9px] font-extrabold uppercase tracking-[0.08em] text-${article.tag_text_color} bg-${article.tag_background_color}`}
           >
-            {article.category}
+            {article.tag}
           </span>
 
           {/* Title */}
@@ -103,23 +99,20 @@ export const NewsCard = memo<NewsCardProps>(
 
           {/* Meta row */}
           <div className="mt-[7px] flex items-center gap-[5px]">
-            <div className="flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[3px] bg-[#EDEDED] text-[9px]">
-              {article.sourceIcon}
-            </div>
-            <span className="text-[10px] font-bold text-[#0C0C0C]">
-              {article.sourceName}
-            </span>
-            {/* Colored meta dot */}
-            <div
-              className={`h-[2px] w-[2px] flex-shrink-0 rounded-full ${meta.accentBar}`}
-              aria-hidden="true"
-            />
-            <span className="text-[10px] text-[#8C8C8C]">
-              {article.timeAgo}
-            </span>
-            <span className="text-[10px] text-[#8C8C8C]">
-              · {article.readTimeMin} min read
-            </span>
+            {article.source_names.map((element, idx) => (
+              <React.Fragment key={idx}>
+                <span className="text-[10px] font-bold text-[#0C0C0C]">
+                  {element}
+                </span>
+                {/* Colored meta dot */}
+                {article.source_names.length - 1 !== idx && (
+                  <div
+                    className={`h-[2px] w-[2px] flex-shrink-0 rounded-full bg-${article.tag_text_color}`}
+                    aria-hidden="true"
+                  />
+                )}
+              </React.Fragment>
+            ))}
           </div>
         </div>
 

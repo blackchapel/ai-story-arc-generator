@@ -18,8 +18,8 @@ load_dotenv()
 # ==========================================
 # CONFIGURATION
 # ==========================================
-FETCH_LIMIT = 25       # RSS entries to attempt per category
-ARTICLE_LIMIT = 12     # Max successfully extracted articles to send to Gemini
+FETCH_LIMIT = 25
+ARTICLE_LIMIT = 12
 EVENTS_PER_CATEGORY = 5
 
 TEXT_MODEL = "publishers/google/models/gemini-2.5-flash"

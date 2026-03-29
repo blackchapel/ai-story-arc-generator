@@ -1,61 +1,34 @@
 import os
-import uuid
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from src.apis.arc_api import router as arc_router
+from src.database import engine, Base
 
-from src.services.generate_arc import run_pipeline
+Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Story Arc Generator API")
+app = FastAPI(title="Arc API")
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 output_path = os.path.join(current_dir, "../output")
 app.mount("/output", StaticFiles(directory=output_path), name="output")
 
-origins = ["*"]
+if not os.path.exists(output_path):
+    os.makedirs(output_path, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class TopicRequest(BaseModel):
-    topic: str
+app.include_router(arc_router, prefix="/api/arc", tags=["Arc"])
 
-jobs = {}
-
-def execute_generation(job_id: str, topic: str):
-    run_pipeline(topic, job_id, jobs)
-
-@app.get("/")
-async def main():
-    return {"message": "CORS is configured!"}
-
-@app.post("/generate")
-async def start_generation(request: TopicRequest, background_tasks: BackgroundTasks):
-    """
-    Accepts a new topic and triggers the full Story Arc pipeline.
-    """
-    job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "queued", "output_url": ""}
-    
-    background_tasks.add_task(execute_generation, job_id, request.topic)
-    
-    return {"job_id": job_id, "status": "queued"}
-
-@app.get("/status/{job_id}")
-async def get_status(job_id: str):
-    """
-    Check the progress of a specific generation job.
-    """
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return jobs[job_id]
+@app.get("/api")
+async def health_check():
+    return {"status": "online", "message": "CORS and Database configured"}
 
 if __name__ == "__main__":
     import uvicorn

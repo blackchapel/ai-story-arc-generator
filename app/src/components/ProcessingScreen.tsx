@@ -1,8 +1,6 @@
-import { memo, useEffect, useState, useCallback } from "react";
+import { memo, useEffect, useState, useCallback, useRef } from "react";
 import { useJobPoller } from "@/hooks/useJobPoller";
 import type { JobStatus } from "@/types/job";
-
-// ─── Step meta ────────────────────────────────────────────────────────────────
 
 interface StepMeta {
   status: JobStatus;
@@ -60,6 +58,49 @@ const STATUS_ORDER: JobStatus[] = [
 
 function getStepIndex(status: JobStatus): number {
   return STATUS_ORDER.indexOf(status);
+}
+
+// ─── Utility: interpolate two hex colors ─────────────────────────────────────
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function lerpColor(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = hexToRgb(a);
+  const [br, bg, bb] = hexToRgb(b);
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// Sample the top-left pixel of the gradient orb to get the current
+// status-bar color. We derive it mathematically instead of using canvas
+// so there's zero DOM cost.
+function getOrbTopColor(angle: number): string {
+  // The orb gradient cycles through these stops
+  const stops = ["#6366F1", "#EC4899", "#F5A623"];
+  // Normalise angle to [0,1] over a full 360° cycle
+  const t = ((angle % 360) + 360) % 360;
+  const segment = t / 120; // 3 stops → 120° each
+  const idx = Math.floor(segment) % stops.length;
+  const next = (idx + 1) % stops.length;
+  return lerpColor(stops[idx], stops[next], segment - Math.floor(segment));
+}
+
+// Write to <meta name="theme-color"> — browsers re-read this live
+function setThemeColor(color: string) {
+  let meta = document.querySelector<HTMLMetaElement>(
+    'meta[name="theme-color"]',
+  );
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.name = "theme-color";
+    document.head.appendChild(meta);
+  }
+  if (meta.content !== color) meta.content = color;
 }
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
@@ -122,8 +163,6 @@ const Tick = memo<{ color: string; delay: number }>(({ color, delay }) => (
 ));
 Tick.displayName = "Tick";
 
-// ─── Idle dot ─────────────────────────────────────────────────────────────────
-
 const IdleDot = memo(() => (
   <div
     className="h-5 w-5 rounded-full"
@@ -132,8 +171,6 @@ const IdleDot = memo(() => (
   />
 ));
 IdleDot.displayName = "IdleDot";
-
-// ─── Single step row ──────────────────────────────────────────────────────────
 
 type StepState = "done" | "active" | "idle";
 
@@ -144,74 +181,65 @@ interface StepRowProps {
   isLast: boolean;
 }
 
-const StepRow = memo<StepRowProps>(({ meta, state, index, isLast }) => {
-  return (
-    <div
-      className="flex items-start gap-4"
-      style={{
-        animation:
-          state !== "idle"
-            ? `slideUp 0.45s cubic-bezier(0.4,0,0.2,1) ${index * 60}ms both`
-            : "none",
-        opacity: state === "idle" ? 0.38 : 1,
-        transition: "opacity 0.4s ease",
-      }}
-    >
-      {/* Icon column */}
-      <div className="flex flex-col items-center">
-        <div className="flex h-5 w-5 items-center justify-center">
-          {state === "done" && <Tick color={meta.color} delay={index * 60} />}
-          {state === "active" && <Spinner color={meta.color} />}
-          {state === "idle" && <IdleDot />}
-        </div>
-
-        {/* Connector line */}
-        {!isLast && (
-          <div
-            className="mt-2 w-[1.5px] flex-1 rounded-full"
-            style={{
-              minHeight: 28,
-              background:
-                state === "done"
-                  ? `linear-gradient(to bottom, ${meta.color} 0%, #EDEDED 100%)`
-                  : "#EDEDED",
-              transition: "background 0.5s ease",
-            }}
-            aria-hidden="true"
-          />
-        )}
+const StepRow = memo<StepRowProps>(({ meta, state, index, isLast }) => (
+  <div
+    className="flex items-start gap-4"
+    style={{
+      animation:
+        state !== "idle"
+          ? `slideUp 0.45s cubic-bezier(0.4,0,0.2,1) ${index * 60}ms both`
+          : "none",
+      opacity: state === "idle" ? 0.38 : 1,
+      transition: "opacity 0.4s ease",
+    }}
+  >
+    <div className="flex flex-col items-center">
+      <div className="flex h-5 w-5 items-center justify-center">
+        {state === "done" && <Tick color={meta.color} delay={index * 60} />}
+        {state === "active" && <Spinner color={meta.color} />}
+        {state === "idle" && <IdleDot />}
       </div>
-
-      {/* Text column */}
-      <div className="pb-7">
-        <p
-          className="text-[14px] font-bold leading-tight"
+      {!isLast && (
+        <div
+          className="mt-2 w-[1.5px] flex-1 rounded-full"
           style={{
-            color:
-              state === "active"
-                ? meta.color
-                : state === "done"
-                  ? "#0C0C0C"
-                  : "#ABABAB",
-            transition: "color 0.3s ease",
+            minHeight: 28,
+            background:
+              state === "done"
+                ? `linear-gradient(to bottom, ${meta.color} 0%, #EDEDED 100%)`
+                : "#EDEDED",
+            transition: "background 0.5s ease",
           }}
-        >
-          {meta.label}
-        </p>
-        {state !== "idle" && (
-          <p
-            className="mt-[3px] text-[11.5px] leading-snug text-[#8C8C8C]"
-            style={{
-              animation: `fadeIn 0.3s ease ${index * 60 + 100}ms both`,
-            }}
-          >
-            {meta.sublabel}
-          </p>
-        )}
-      </div>
+          aria-hidden="true"
+        />
+      )}
     </div>
-  );
-});
+    <div className="pb-7">
+      <p
+        className="text-[14px] font-bold leading-tight"
+        style={{
+          color:
+            state === "active"
+              ? meta.color
+              : state === "done"
+                ? "#0C0C0C"
+                : "#ABABAB",
+          transition: "color 0.3s ease",
+        }}
+      >
+        {meta.label}
+      </p>
+      {state !== "idle" && (
+        <p
+          className="mt-[3px] text-[11.5px] leading-snug text-[#8C8C8C]"
+          style={{ animation: `fadeIn 0.3s ease ${index * 60 + 100}ms both` }}
+        >
+          {meta.sublabel}
+        </p>
+      )}
+    </div>
+  </div>
+));
 StepRow.displayName = "StepRow";
 
 // ─── Processing Screen ────────────────────────────────────────────────────────
@@ -225,22 +253,38 @@ interface ProcessingScreenProps {
 export const ProcessingScreen = memo<ProcessingScreenProps>(
   ({ jobId, onComplete, onError }) => {
     const { state, stop } = useJobPoller(jobId);
-
-    // Animated gradient angle
     const [gradAngle, setGradAngle] = useState(135);
+    const angleRef = useRef(135);
+
+    // Rotating gradient + live theme-color sync
     useEffect(() => {
       let frame: number;
-      let angle = 135;
+
       const tick = () => {
-        angle = (angle + 0.3) % 360;
-        setGradAngle(angle);
+        angleRef.current = (angleRef.current + 0.3) % 360;
+        setGradAngle(angleRef.current);
+
+        // Derive the color that sits at the very top of the orb and
+        // apply it to the browser chrome / status bar
+        const topColor = getOrbTopColor(angleRef.current);
+
+        // Blend it heavily toward white so the status bar stays light
+        // and readable (icons stay dark). Pure orb color is too saturated.
+        const blended = lerpColor(topColor, "#ffffff", 0.82);
+        setThemeColor(blended);
+
         frame = requestAnimationFrame(tick);
       };
+
       frame = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(frame);
+
+      return () => {
+        cancelAnimationFrame(frame);
+        // Restore neutral white when leaving this screen
+        setThemeColor("#ffffff");
+      };
     }, []);
 
-    // Route outcomes
     useEffect(() => {
       if (state.phase === "done") {
         stop();
@@ -266,27 +310,34 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
     return (
       <div
         className="flex min-h-dvh w-full flex-col bg-white"
-        style={{
-          animation: "pageFadeIn 0.4s cubic-bezier(0.4,0,0.2,1) both",
-        }}
+        style={{ animation: "pageFadeIn 0.4s cubic-bezier(0.4,0,0.2,1) both" }}
       >
-        {/* Top gradient orb */}
-        <div className="relative flex-shrink-0 overflow-hidden px-6 pb-8 pt-16">
+        {/*
+         * The orb sits behind the content including the safe-area zone.
+         * We let it bleed into the top with a negative margin so the
+         * gradient visually continues into the status bar region.
+         */}
+        <div
+          className="relative flex-shrink-0 overflow-visible px-6 pb-8"
+          style={{
+            // Extend above the safe area so color fills the status bar zone
+            paddingTop: "calc(env(safe-area-inset-top, 24px) + 40px)",
+            marginTop: 0,
+          }}
+        >
+          {/* Gradient orb — bleeds upward into status bar area */}
           <div
-            className="absolute left-1/2 top-0 h-[200px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-[80px]"
+            className="absolute left-1/2 top-0 h-[260px] w-[400px] -translate-x-1/2 -translate-y-[40%] rounded-full opacity-25 blur-[72px]"
             style={{
               background: `linear-gradient(${gradAngle}deg, #6366F1, #EC4899, #F5A623)`,
-              transition: "background 0.1s linear",
             }}
             aria-hidden="true"
           />
 
           <div className="relative">
-            {/* Logo */}
             <p className="mb-2 select-none font-logo text-[26px] font-black leading-none tracking-[-1.5px] text-[#0C0C0C]">
               arc<span style={{ color: "#F5A623" }}>.</span>
             </p>
-
             <h1 className="text-[22px] font-bold leading-tight text-[#0C0C0C]">
               Building your arc
             </h1>
@@ -296,7 +347,6 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           </div>
         </div>
 
-        {/* Steps */}
         <div className="flex-1 overflow-y-auto px-6">
           {STEPS.map((meta, i) => (
             <StepRow
@@ -309,7 +359,6 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           ))}
         </div>
 
-        {/* Bottom hint */}
         <div
           className="flex-shrink-0 px-6 pb-10 pt-4 text-center text-[11px] text-[#ABABAB]"
           style={{ borderTop: "1px solid #F5F5F5" }}
@@ -317,7 +366,6 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           You can close this tab — we'll keep it warm.
         </div>
 
-        {/* Keyframes injected inline for isolation */}
         <style>{`
           @keyframes tickPop {
             from { transform: scale(0.4); opacity: 0; }

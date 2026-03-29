@@ -34,7 +34,7 @@ const CHIP_STYLES: Array<{ color: string; bg: string; border: string }> = [
 
 interface PromptBarProps {
   chips: PromptChip[];
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string) => Promise<void>;
 }
 
 export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
@@ -66,10 +66,10 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
     setValue(e.target.value);
   }, []);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    onSubmit(trimmed);
+    await onSubmit(trimmed);
     setValue("");
     inputRef.current?.blur();
   }, [value, onSubmit]);
@@ -87,7 +87,7 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
   const handleChipSelect = useCallback(
     (label: string) => (e: React.PointerEvent) => {
       e.preventDefault(); // prevent blur
-      setValue(label);
+      setValue(label + ": ");
       inputRef.current?.focus();
     },
     [],
@@ -125,7 +125,7 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
       {/* Suggestion chips */}
       {showChips && (
         <div
-          className="mb-[8px] flex gap-[6px] overflow-x-auto pb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="mb-[8px] flex gap-[6px] justify-center overflow-x-auto pb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           aria-live="polite"
         >
           {chips.map((chip, i) => {

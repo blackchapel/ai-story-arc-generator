@@ -374,7 +374,7 @@ chartGrid:#1f2530
   "blindspots": [
     // Exactly 3. Genuinely underreported angles. At least one must challenge the dominant narrative.
     {
-      "icon": "?",
+      "icon": "🔦",
       "tag": "Domain . Framing",
       "head": "Unreported question or gap (max 15 words)",
       "body": "2-3 sentences explaining what is being missed and why it matters."

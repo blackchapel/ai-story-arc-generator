@@ -27,7 +27,7 @@ export const TopicPills = memo<TopicPillsProps>(
                 role="listitem"
                 onClick={() => onSelect(filter.id)}
                 className={cn(
-                  "flex h-8 flex-shrink-0 cursor-pointer items-center gap-[5px] rounded-full border px-[13px] text-[12px] font-semibold transition-all duration-150",
+                  "flex h-8 flex-shrink-0 cursor-pointer items-center rounded-full border px-[13px] text-[12px] font-semibold transition-all duration-150",
                   isActive
                     ? "border-transparent text-white shadow-[0_2px_10px_rgba(99,102,241,0.28)]"
                     : "border-[#EBEBEB] bg-[#F5F5F5] text-[#0C0C0C] active:bg-[#EDEDED]",
@@ -42,9 +42,6 @@ export const TopicPills = memo<TopicPillsProps>(
                 }
                 aria-pressed={isActive}
               >
-                <span aria-hidden="true" className="text-[13px]">
-                  {filter.emoji}
-                </span>
                 {filter.label}
               </button>
             );

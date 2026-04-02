@@ -7,16 +7,22 @@ function useFeedPreviews(): Map<string, string> {
   useEffect(() => {
     fetch("/feed/feed.json")
       .then((r) => r.json())
-      .then((data: Array<{ category: string; events: Array<{ image: string }> }>) => {
-        const m = new Map<string, string>();
-        for (const cat of data) {
-          if (cat.events?.[0]?.image) {
-            m.set(cat.category.toLowerCase(), `/feed/${cat.events[0].image}`);
+      .then(
+        (
+          data: Array<{ category: string; events: Array<{ image: string }> }>,
+        ) => {
+          const m = new Map<string, string>();
+          for (const cat of data) {
+            if (cat.events?.[0]?.image) {
+              m.set(cat.category.toLowerCase(), `/feed/${cat.events[0].image}`);
+            }
           }
-        }
-        setMap(m);
-      })
-      .catch(() => {/* no preview — graceful fallback to gradient */});
+          setMap(m);
+        },
+      )
+      .catch(() => {
+        /* no preview — graceful fallback to gradient */
+      });
   }, []);
   return map;
 }
@@ -92,35 +98,34 @@ interface StoriesRowProps {
   onAddStory: () => void;
 }
 
-export const StoriesRow = memo<StoriesRowProps>(
-  ({ stories, onStoryClick, onAddStory }) => {
-    const feedPreviews = useFeedPreviews();
-    return (
-      <section
-        className="flex-shrink-0 border-b border-[#EBEBEB] pb-3 pt-[14px]"
-        aria-label="Stories"
+export const StoriesRow = memo<StoriesRowProps>(({ stories, onStoryClick }) => {
+  const feedPreviews = useFeedPreviews();
+  return (
+    <section
+      className="flex-shrink-0 border-b border-[#EBEBEB] pb-3 pt-[14px]"
+      aria-label="Stories"
+    >
+      {/* Section label */}
+      <p
+        className="pb-[10px] pl-[18px] text-[10.5px] font-bold uppercase tracking-[0.09em]"
+        style={{
+          background: "linear-gradient(90deg, #6366F1 0%, #EC4899 100%)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+        }}
       >
-        {/* Section label */}
-        <p
-          className="pb-[10px] pl-[18px] text-[10.5px] font-bold uppercase tracking-[0.09em]"
-          style={{
-            background: "linear-gradient(90deg, #6366F1 0%, #EC4899 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-          }}
-        >
-          Story Panels
-        </p>
+        Story Panels
+      </p>
 
-        {/* Scrollable row */}
-        <div
-          className="flex gap-2 overflow-x-auto px-[18px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          style={{ WebkitOverflowScrolling: "touch" }}
-          role="list"
-        >
-          {/* Add Story tile */}
-          <button
+      {/* Scrollable row */}
+      <div
+        className="flex gap-2 overflow-x-auto px-[18px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={{ WebkitOverflowScrolling: "touch" }}
+        role="list"
+      >
+        {/* Add Story tile */}
+        {/* <button
             onClick={onAddStory}
             className="flex h-[144px] w-[86px] flex-shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-none transition-colors duration-150 active:opacity-80"
             style={{
@@ -157,22 +162,21 @@ export const StoriesRow = memo<StoriesRowProps>(
               <br />
               Story
             </span>
-          </button>
+          </button> */}
 
-          {/* Story cards */}
-          {stories.map((story) => (
-            <div key={story.id} role="listitem">
-              <StoryCard
-                story={story}
-                previewImage={feedPreviews.get(story.label.toLowerCase())}
-                onClick={onStoryClick}
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-    );
-  },
-);
+        {/* Story cards */}
+        {stories.map((story) => (
+          <div key={story.id} role="listitem">
+            <StoryCard
+              story={story}
+              previewImage={feedPreviews.get(story.label.toLowerCase())}
+              onClick={onStoryClick}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+});
 
 StoriesRow.displayName = "StoriesRow";

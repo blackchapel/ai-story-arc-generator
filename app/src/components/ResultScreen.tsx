@@ -1,25 +1,44 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { fetchOutput } from "@/apis";
 
 interface ResultScreenProps {
-  htmlContent: string;
+  jobId: string;
+  htmlContent?: string;
   onBack: () => void;
 }
 
 export const ResultScreen = memo<ResultScreenProps>(
-  ({ htmlContent, onBack }) => {
+  ({ jobId, htmlContent: initialHtml, onBack }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [loaded, setLoaded] = useState(false);
+    const [htmlContent, setHtmlContent] = useState<string | null>(
+      initialHtml ?? null,
+    );
+    const [fetchError, setFetchError] = useState(false);
 
-    // Write HTML into the sandboxed iframe via srcdoc
-    // srcdoc is XSS-safe when sandbox restricts scripts appropriately
     const handleLoad = useCallback(() => {
       setLoaded(true);
     }, []);
+
+    // Fetch HTML if not provided (e.g. navigating from a card tap)
+    useEffect(() => {
+      if (initialHtml) return;
+      let cancelled = false;
+      fetchOutput(jobId)
+        .then((arc) => {
+          if (!cancelled) setHtmlContent(arc.html ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) setFetchError(true);
+        });
+      return () => { cancelled = true; };
+    }, [jobId, initialHtml]);
 
     // Blob URL approach for full fidelity (scripts, styles, relative assets)
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
     useEffect(() => {
+      if (!htmlContent) return;
       const blob = new Blob([htmlContent], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       setBlobUrl(url);
@@ -85,7 +104,11 @@ export const ResultScreen = memo<ResultScreenProps>(
               if (navigator.share) {
                 navigator
                   .share({ title: "arc. story", url: window.location.href })
-                  .catch(() => {});
+                  .catch((error) => {
+                    console.log(error);
+                  });
+              } else {
+                console.log("error");
               }
             }}
           >
@@ -130,8 +153,8 @@ export const ResultScreen = memo<ResultScreenProps>(
 
         {/* Iframe content area */}
         <div className="relative flex-1 overflow-hidden scrollbar-hide">
-          {/* Shimmer skeleton while iframe loads */}
-          {!loaded && (
+          {/* Shimmer — shown while fetching HTML or while iframe is loading */}
+          {(!htmlContent || !loaded) && !fetchError && (
             <div className="absolute inset-0 z-10 bg-white">
               <div className="flex flex-col gap-4 p-5 pt-8">
                 {[80, 55, 90, 40, 70].map((w, i) => (
@@ -150,6 +173,20 @@ export const ResultScreen = memo<ResultScreenProps>(
                   />
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Error state */}
+          {fetchError && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <p className="text-[15px] font-semibold text-[#0C0C0C]">Couldn't load this arc</p>
+              <p className="text-[13px] text-[#8C8C8C]">It may have expired or been removed.</p>
+              <button
+                onClick={onBack}
+                className="mt-2 rounded-xl border-none bg-[#F5F5F5] px-5 py-2.5 text-[13px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
+              >
+                Go home
+              </button>
             </div>
           )}
 

@@ -27,22 +27,8 @@ export interface NewsArticle {
   img: string;
   tag: string;
   tag_text_color: string;
-  tag_background_color: string;
   source_names: string[];
-  html: string;
-}
-
-export interface NewsArticle1 {
-  id: string;
-  category: Category;
-  title: string;
-  description: string;
-  imageUrl: string;
-  imageAlt: string;
-  sourceName: string;
-  sourceIcon: string;
-  timeAgo: string;
-  readTimeMin: number;
+  html?: string;
 }
 
 // ─── TopicFilter ─────────────────────────────────────────────────────────────
@@ -50,8 +36,6 @@ export interface NewsArticle1 {
 export interface TopicFilter {
   id: string;
   label: string;
-  emoji: string;
-  category: Category | "all";
 }
 
 // ─── PromptChip ──────────────────────────────────────────────────────────────

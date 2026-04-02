@@ -6,6 +6,7 @@ import base64
 import requests
 import feedparser
 import trafilatura
+from html.parser import HTMLParser
 from datetime import datetime, timezone
 from pathlib import Path
 from google import genai
@@ -16,7 +17,9 @@ from dotenv import load_dotenv
 from src.models.arc_model import ArcModel
 from src.prompts import generate_arc_data_prompt
 from src.schemas.output_schema import OutputSchema
+from src.schemas.notification_schema import NotificationSchema
 from src.database import SessionLocal
+from src.services.email_service import send_arc_ready_email
 
 load_dotenv()
 
@@ -219,20 +222,14 @@ def assemble_arc(analysis: ArcModel, job_id: str):
     json_data = json.dumps(analysis.model_dump(), ensure_ascii=True)
     html_content = html_content.replace("{{ARC_DATA}}", json_data)
 
-    output_dir = Path(f"output/{job_id}")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "index.html"
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(html_content)
-
-    print(f"[✓] Saved to {output_file}")
+    print(f"[✓] Assembled HTML")
 
     return html_content
 
 # ==========================================
 # STEP 5: SAVE ARC TO DB
 # ==========================================
-def save_arc_to_db(job_id: str, title: str, description: str, img_base64: str, source_names: list[str], tag: str, tag_text_color: str, tag_background_color: str, html_content: str):
+def save_arc_to_db(job_id: str, title: str, description: str, img_base64: str, source_names: list[str], tag: str, tag_text_color: str, html_content: str):
     db = SessionLocal()
     try:
         new_output = OutputSchema(
@@ -243,7 +240,6 @@ def save_arc_to_db(job_id: str, title: str, description: str, img_base64: str, s
             source_names=source_names,
             tag=tag,
             tag_text_color=tag_text_color,
-            tag_background_color=tag_background_color,
             html=html_content
         )
         
@@ -259,6 +255,52 @@ def save_arc_to_db(job_id: str, title: str, description: str, img_base64: str, s
         raise e
     finally:
         db.close()
+
+
+class TagStripper(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.text = []
+
+    def handle_data(self, data):
+        self.text.append(data)
+
+    def get_text(self):
+        return ''.join(self.text)
+
+def strip_tags(html: str) -> str:
+    stripper = TagStripper()
+    stripper.feed(html)
+    return stripper.get_text()
+
+# ==========================================
+# NOTIFICATION DISPATCH
+# ==========================================
+def _dispatch_notifications(job_id: str) -> None:
+    db = SessionLocal()
+    try:
+        from datetime import datetime, timezone as tz
+        pending = (
+            db.query(NotificationSchema)
+            .filter(
+                NotificationSchema.job_id == job_id,
+                NotificationSchema.sent_at.is_(None),
+            )
+            .all()
+        )
+        for notification in pending:
+            try:
+                send_arc_ready_email(notification.email, job_id)
+                notification.sent_at = datetime.now(tz.utc)
+            except Exception as e:
+                print(f"[!] Failed to send notification to {notification.email}: {e}")
+        db.commit()
+    except Exception as e:
+        print(f"[!] Notification dispatch error for job {job_id}: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 
 # ==========================================
 # MAIN EXECUTION
@@ -287,19 +329,20 @@ def run_pipeline(topic: str, job_id: str, jobs=None):
         html_content = assemble_arc(analysis, job_id)
         save_arc_to_db(
             job_id,
-            analysis.topic.title,
+            strip_tags(analysis.topic.title),
             analysis.topic.subtitle,
             analysis.panels[0].image,
             analysis.sources,
             analysis.topic.eyebrow.split(".")[0].strip(),
-            "#1e90ff",
-            "#60a5fa",
+            analysis.theme.accent,
             html_content
         )
 
         if jobs is not None:
             jobs[job_id]["status"] = "COMPLETED"
             jobs[job_id]["output_url"] = f"https://arc-backend-liart.vercel.app/output/{job_id}/index.html"
+
+        _dispatch_notifications(job_id)
 
         runtime = round(time.time() - start_time, 1)
         print(f"\n[*] Complete Story Arc processed in {runtime}s")

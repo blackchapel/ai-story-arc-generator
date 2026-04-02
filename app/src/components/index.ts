@@ -3,6 +3,7 @@ export { StoriesRow } from "./StoriesRow";
 export { TopicPills } from "./TopicPills";
 export { NewsFeed } from "./NewsFeed";
 export { NewsCard } from "./NewsCard";
+export { SkeletonNewsCard } from "./SkeletonNewsCard";
 export { PromptBar } from "./PromptBar";
 export { SideMenu } from "./SideMenu";
 export { Toast } from "./Toast";

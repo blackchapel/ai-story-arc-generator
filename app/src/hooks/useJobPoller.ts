@@ -56,9 +56,11 @@ export function useJobPoller(jobId: string) {
         }
 
         if (status === "COMPLETED") {
-          const html = await fetchOutput(jobId);
+          const res = await fetchOutput(jobId);
           if (abortRef.current) return;
-          setState({ phase: "done", htmlContent: html });
+          if (res.html) {
+            setState({ phase: "done", htmlContent: res.html });
+          }
           return;
         }
 

@@ -1,19 +1,24 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import type { NewsArticle } from "@/types";
 import { NewsCard } from "./NewsCard";
+import { SkeletonNewsCard } from "./SkeletonNewsCard";
 
 interface NewsFeedProps {
   articles: NewsArticle[];
   isBookmarked: (id: string) => boolean;
   onBookmark: (id: string) => void;
-  onArticleClick: (id: string) => void;
-  onSeeAll: () => void;
+  onArticleClick: (jobId: string) => void;
+  isLoading?: boolean;
 }
 
 export const NewsFeed = memo<NewsFeedProps>(
-  ({ articles, isBookmarked, onBookmark, onArticleClick, onSeeAll }) => {
-    const handleSeeAll = useCallback(() => onSeeAll(), [onSeeAll]);
-
+  ({
+    articles,
+    isBookmarked,
+    onBookmark,
+    onArticleClick,
+    isLoading = false,
+  }) => {
     return (
       <section aria-label="Top stories">
         {/* Feed header */}
@@ -29,26 +34,24 @@ export const NewsFeed = memo<NewsFeedProps>(
           >
             Story Arcs
           </span>
-          <button
-            onClick={handleSeeAll}
-            className="cursor-pointer border-none bg-transparent py-1 text-[12px] font-bold text-[#6366F1]"
-          >
-            See all →
-          </button>
         </div>
 
         {/* Cards */}
         <div>
-          {articles.map((article, index) => (
-            <NewsCard
-              key={article.id}
-              article={article}
-              index={index}
-              isBookmarked={isBookmarked(article.id)}
-              onBookmark={onBookmark}
-              onClick={onArticleClick}
-            />
-          ))}
+          {isLoading
+            ? Array.from({ length: 4 }).map((_, index) => (
+                <SkeletonNewsCard key={`skeleton-${index}`} index={index} />
+              ))
+            : articles.map((article, index) => (
+                <NewsCard
+                  key={article.id}
+                  article={article}
+                  index={index}
+                  isBookmarked={isBookmarked(article.id)}
+                  onBookmark={onBookmark}
+                  onClick={onArticleClick}
+                />
+              ))}
         </div>
       </section>
     );

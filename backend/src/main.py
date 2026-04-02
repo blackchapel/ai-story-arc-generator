@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from src.apis.arc_api import router as arc_router
 from src.database import engine, Base
+import src.schemas.output_schema        # noqa: F401 — registers OutputSchema with Base
+import src.schemas.notification_schema  # noqa: F401 — registers NotificationSchema with Base
 
 Base.metadata.create_all(bind=engine)
 

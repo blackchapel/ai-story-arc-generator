@@ -14,5 +14,4 @@ class OutputSchema(Base):
     source_names = Column(ARRAY(Text), default=[])
     tag = Column(Text)
     tag_text_color = Column(Text)
-    tag_background_color = Column(Text)
     html = Column(Text)

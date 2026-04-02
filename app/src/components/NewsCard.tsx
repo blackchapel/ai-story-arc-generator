@@ -1,12 +1,13 @@
 import React, { memo, useCallback } from "react";
 import type { NewsArticle } from "@/types";
+import { generateTagBackground } from "@/utils/tagColor";
 
 interface NewsCardProps {
   article: NewsArticle;
   index: number;
   isBookmarked: boolean;
   onBookmark: (id: string) => void;
-  onClick: (id: string) => void;
+  onClick: (jobId: string) => void;
 }
 
 const BookmarkIcon = memo<{ filled: boolean }>(({ filled }) => (
@@ -43,6 +44,8 @@ export const NewsCard = memo<NewsCardProps>(
       [onClick, article.id],
     );
 
+    const tagBackgroundColor = generateTagBackground(article.tag_text_color);
+
     return (
       <article
         onClick={handleClick}
@@ -58,8 +61,8 @@ export const NewsCard = memo<NewsCardProps>(
       >
         {/* Left accent bar */}
         <div
-          className={`absolute left-[18px] top-[18px] w-[2.5px] rounded-sm bg-${article.tag_text_color}`}
-          style={{ bottom: "18px" }}
+          className={`absolute left-[18px] top-[18px] w-[2.5px] rounded-sm`}
+          style={{ bottom: "18px", backgroundColor: article.tag_text_color }}
           aria-hidden="true"
         />
 
@@ -82,7 +85,11 @@ export const NewsCard = memo<NewsCardProps>(
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Category tag */}
           <span
-            className={`mb-[5px] inline-flex w-fit items-center rounded-[4px] px-[7px] py-[2px] text-[9px] font-extrabold uppercase tracking-[0.08em] text-${article.tag_text_color} bg-${article.tag_background_color}`}
+            className={`mb-[5px] inline-flex w-fit items-center rounded-[4px] px-[7px] py-[2px] text-[9px] font-extrabold uppercase tracking-[0.08em]`}
+            style={{
+              color: article.tag_text_color,
+              backgroundColor: tagBackgroundColor,
+            }}
           >
             {article.tag}
           </span>
@@ -98,22 +105,21 @@ export const NewsCard = memo<NewsCardProps>(
           </p>
 
           {/* Meta row */}
-          <div className="mt-[7px] flex items-center gap-[5px]">
+          <p className="mt-[7px] truncate text-[10px] font-bold text-[#0C0C0C]">
             {article.source_names.map((element, idx) => (
               <React.Fragment key={idx}>
-                <span className="text-[10px] font-bold text-[#0C0C0C]">
-                  {element}
-                </span>
-                {/* Colored meta dot */}
+                {element}
                 {article.source_names.length - 1 !== idx && (
-                  <div
-                    className={`h-[2px] w-[2px] flex-shrink-0 rounded-full bg-${article.tag_text_color}`}
+                  <span
+                    style={{ color: article.tag_text_color }}
                     aria-hidden="true"
-                  />
+                  >
+                    {" · "}
+                  </span>
                 )}
               </React.Fragment>
             ))}
-          </div>
+          </p>
         </div>
 
         {/* Bookmark */}

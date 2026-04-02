@@ -41,6 +41,7 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
   const [showChips, setShowChips] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const kbOffset = useKeyboardOffset();
 
@@ -68,11 +69,16 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
-    if (!trimmed) return;
-    await onSubmit(trimmed);
-    setValue("");
-    inputRef.current?.blur();
-  }, [value, onSubmit]);
+    if (!trimmed || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(trimmed);
+      setValue("");
+      inputRef.current?.blur();
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [value, onSubmit, isSubmitting]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -265,7 +271,8 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
           {/* Send — visible when text present */}
           <button
             onClick={handleSend}
-            className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full border-none text-white active:scale-[0.88]"
+            disabled={isSubmitting}
+            className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full border-none text-white active:scale-[0.88] disabled:cursor-default"
             style={{
               background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
               boxShadow: "0 2px 10px rgba(99,102,241,0.35)",
@@ -280,21 +287,22 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
             aria-label="Send message"
             aria-hidden={!hasText}
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 13 13"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M6.5 11V2M2 6.5l4.5-4.5 4.5 4.5"
-                stroke="white"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            {isSubmitting ? (
+              <svg className="animate-spin" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                <circle cx="6.5" cy="6.5" r="5" stroke="rgba(255,255,255,0.35)" strokeWidth="2"/>
+                <path d="M6.5 1.5a5 5 0 0 1 5 5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                <path
+                  d="M6.5 11V2M2 6.5l4.5-4.5 4.5 4.5"
+                  stroke="white"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </button>
         </div>
       </div>

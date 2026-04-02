@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 
 import {
   Header,
@@ -16,7 +16,7 @@ import { useBookmarks } from "@/hooks/useBookmarks";
 import { useKeyboardOffset } from "@/hooks/useKeyboardOffset";
 import { useToast } from "@/hooks/useToast";
 import { fetchArcs, sendPrompt } from "@/apis";
-import { STORIES, TOPIC_FILTERS, PROMPT_CHIPS } from "@/data";
+import { STORIES, PROMPT_CHIPS } from "@/data";
 import type { NewsArticle, Story } from "@/types";
 import type { AppView } from "@/types/job";
 
@@ -27,24 +27,52 @@ export default function App() {
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [arcs, setArcs] = useState<NewsArticle[]>([]);
+  const [isLoadingArcs, setIsLoadingArcs] = useState(true);
 
   const { isBookmarked, toggle: toggleBookmark } = useBookmarks();
   const { toast, showToast, dismissToast } = useToast();
   const kbOffset = useKeyboardOffset();
 
-  // const filteredArticles = useMemo<NewsArticle1[]>(() => {
-  //   if (activeFilter === "all") return NEWS_ARTICLES;
-  //   const filter = TOPIC_FILTERS.find((f) => f.id === activeFilter);
-  //   if (!filter || filter.category === "all") return NEWS_ARTICLES;
-  //   return NEWS_ARTICLES.filter((a) => a.category === filter.category);
-  // }, [activeFilter]);
+  const topicFilters = useMemo(() => {
+    const seen = new Set<string>();
+    const filters = [{ id: "all", label: "All" }];
+    for (const arc of arcs) {
+      if (arc.tag && !seen.has(arc.tag)) {
+        seen.add(arc.tag);
+        filters.push({ id: arc.tag, label: arc.tag });
+      }
+    }
+    return filters;
+  }, [arcs]);
 
-  const goHome = useCallback(() => setView({ screen: "home" }), []);
+  const filteredArcs = useMemo(
+    () =>
+      activeFilter === "all"
+        ? arcs
+        : arcs.filter((a) => a.tag === activeFilter),
+    [arcs, activeFilter],
+  );
+
+  const refreshArcs = useCallback(async () => {
+    try {
+      const data = await fetchArcs();
+      setArcs(data);
+    } catch (error) {
+      console.error("Error refreshing arcs:", error);
+    }
+  }, []);
+
+  const goHome = useCallback(() => {
+    history.replaceState(null, "", "/");
+    setView({ screen: "home" });
+    refreshArcs();
+  }, [refreshArcs]);
 
   const handlePromptSubmit = useCallback(
     async (value: string) => {
       try {
         const { job_id } = await sendPrompt(value);
+        history.pushState(null, "", `/process/${job_id}`);
         setView({ screen: "processing", jobId: job_id });
       } catch (error) {
         console.log(error);
@@ -54,12 +82,17 @@ export default function App() {
     [showToast],
   );
 
-  const handleProcessingComplete = useCallback((htmlContent: string) => {
-    setView((prev) =>
-      prev.screen === "processing"
-        ? { screen: "result", jobId: prev.jobId, htmlContent }
-        : prev,
-    );
+  const handleProcessingComplete = useCallback(
+    (htmlContent: string, jobId: string) => {
+      history.replaceState(null, "", `/arc/${jobId}`);
+      setView({ screen: "result", jobId, htmlContent });
+    },
+    [],
+  );
+
+  const handleArticleClick = useCallback((jobId: string) => {
+    history.pushState(null, "", `/arc/${jobId}`);
+    setView({ screen: "result", jobId });
   }, []);
 
   const handleProcessingError = useCallback(
@@ -76,24 +109,45 @@ export default function App() {
     (id: string) => setActiveFilter(id),
     [],
   );
-  const handleStoryClick = useCallback(
-    (id: string) => {
-      const s = STORIES.find((story) => story.id === id) ?? null;
-      setOpenStory(s);
-    },
-    [],
-  );
+  const handleStoryClick = useCallback((id: string) => {
+    const s = STORIES.find((story) => story.id === id) ?? null;
+    setOpenStory(s);
+  }, []);
   const handleStoryClose = useCallback(() => setOpenStory(null), []);
   const handleAddStory = useCallback(() => {}, []);
-  const handleArticleClick = useCallback((_id: string) => {}, []);
-  const handleSeeAll = useCallback(() => {}, []);
   const handleProfileClick = useCallback(() => {}, []);
 
-  const getArcs = async () => {
-    setArcs(await fetchArcs());
-  };
   useEffect(() => {
-    getArcs();
+    const controller = new AbortController();
+
+    const loadArcs = async () => {
+      setIsLoadingArcs(true);
+      try {
+        const data = await fetchArcs(controller.signal);
+        setArcs(data);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Error fetching arcs:", error);
+        showToast("Failed to load story arcs");
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingArcs(false);
+      }
+    };
+
+    loadArcs();
+    return () => controller.abort();
+  }, [showToast]);
+
+  // Restore screen from URL on initial load
+  useEffect(() => {
+    const path = window.location.pathname;
+    const arcMatch = path.match(/^\/arc\/(.+)$/);
+    const processMatch = path.match(/^\/process\/(.+)$/);
+    if (arcMatch) {
+      setView({ screen: "result", jobId: arcMatch[1] });
+    } else if (processMatch) {
+      setView({ screen: "processing", jobId: processMatch[1] });
+    }
   }, []);
 
   return (
@@ -102,7 +156,9 @@ export default function App() {
       <Toast toast={toast} onDismiss={dismissToast} />
 
       {/* Stories viewer overlay */}
-      {openStory && <StoryViewer story={openStory} onClose={handleStoryClose} />}
+      {openStory && (
+        <StoryViewer story={openStory} onClose={handleStoryClose} />
+      )}
 
       {/* Processing screen */}
       {view.screen === "processing" && (
@@ -110,12 +166,13 @@ export default function App() {
           jobId={view.jobId}
           onComplete={handleProcessingComplete}
           onError={handleProcessingError}
+          onBack={goHome}
         />
       )}
 
       {/* Result screen */}
       {view.screen === "result" && (
-        <ResultScreen htmlContent={view.htmlContent} onBack={goHome} />
+        <ResultScreen jobId={view.jobId} htmlContent={view.htmlContent} onBack={goHome} />
       )}
 
       {/* Home screen */}
@@ -177,16 +234,16 @@ export default function App() {
                   onAddStory={handleAddStory}
                 />
                 <TopicPills
-                  filters={TOPIC_FILTERS}
+                  filters={topicFilters}
                   activeId={activeFilter}
                   onSelect={handleFilterSelect}
                 />
                 <NewsFeed
-                  articles={arcs}
+                  articles={filteredArcs}
                   isBookmarked={isBookmarked}
                   onBookmark={toggleBookmark}
                   onArticleClick={handleArticleClick}
-                  onSeeAll={handleSeeAll}
+                  isLoading={isLoadingArcs && arcs.length === 0}
                 />
               </div>
             </main>

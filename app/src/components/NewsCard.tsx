@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import type { NewsArticle } from "@/types";
 import { generateTagBackground } from "@/utils/tagColor";
 
@@ -44,7 +44,10 @@ export const NewsCard = memo<NewsCardProps>(
       [onClick, article.id],
     );
 
-    const tagBackgroundColor = generateTagBackground(article.tag_text_color);
+    const tagBg = useMemo(
+      () => generateTagBackground(article.tag_text_color),
+      [article.tag_text_color],
+    );
 
     return (
       <article
@@ -61,64 +64,43 @@ export const NewsCard = memo<NewsCardProps>(
       >
         {/* Left accent bar */}
         <div
-          className={`absolute left-[18px] top-[18px] w-[2.5px] rounded-sm`}
+          className="absolute left-[18px] top-[18px] w-[2.5px] rounded-sm"
           style={{ bottom: "18px", backgroundColor: article.tag_text_color }}
           aria-hidden="true"
         />
 
         {/* Thumbnail */}
-        <div
-          className="ml-4 relative h-[86px] w-[86px] flex-shrink-0 overflow-hidden rounded-md bg-[#F5F5F5]"
-          style={{ boxShadow: `inset 0 3px 0 var(--thumb-color, transparent)` }}
-        >
+        <div className="relative ml-4 h-[86px] w-[86px] flex-shrink-0 overflow-hidden rounded-md bg-[#F5F5F5]">
           <img
             src={article.img}
+            alt=""
             loading="lazy"
             width={86}
             height={86}
-            className="h-full w-full object-cover transition-transform duration-300 group-active:scale-[1.04]"
+            className="h-full w-full object-cover"
             decoding="async"
           />
         </div>
 
         {/* Content */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Category tag */}
           <span
-            className={`mb-[5px] inline-flex w-fit items-center rounded-[4px] px-[7px] py-[2px] text-[9px] font-extrabold uppercase tracking-[0.08em]`}
-            style={{
-              color: article.tag_text_color,
-              backgroundColor: tagBackgroundColor,
-            }}
+            className="mb-[5px] inline-flex w-fit items-center rounded-[4px] px-[7px] py-[2px] text-[9px] font-extrabold uppercase tracking-[0.08em]"
+            style={{ color: article.tag_text_color, backgroundColor: tagBg }}
           >
             {article.tag}
           </span>
 
-          {/* Title */}
           <h3 className="mb-1 line-clamp-2 text-[13.5px] font-bold leading-[1.38] text-[#0C0C0C]">
             {article.title}
           </h3>
 
-          {/* Description */}
           <p className="line-clamp-2 text-[11.5px] leading-[1.48] text-[#8C8C8C]">
             {article.description}
           </p>
 
-          {/* Meta row */}
           <p className="mt-[7px] truncate text-[10px] font-bold text-[#0C0C0C]">
-            {article.source_names.map((element, idx) => (
-              <React.Fragment key={idx}>
-                {element}
-                {article.source_names.length - 1 !== idx && (
-                  <span
-                    style={{ color: article.tag_text_color }}
-                    aria-hidden="true"
-                  >
-                    {" · "}
-                  </span>
-                )}
-              </React.Fragment>
-            ))}
+            {article.source_names.join(" · ")}
           </p>
         </div>
 

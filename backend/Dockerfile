@@ -11,12 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your code
 COPY . .
 
-# Create the directory explicitly in the container's root
-RUN mkdir -p /app/output
-
-# Ensure permissions
-RUN chmod 777 /app/output
-
 # Expose the port FastAPI will run on
 EXPOSE 8080
 

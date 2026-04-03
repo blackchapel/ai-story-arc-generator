@@ -67,18 +67,22 @@ export const PromptBar = memo<PromptBarProps>(({ chips, onSubmit }) => {
     setValue(e.target.value);
   }, []);
 
+  const isSubmittingRef = useRef(false);
+
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
-    if (!trimmed || isSubmitting) return;
+    if (!trimmed || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       await onSubmit(trimmed);
       setValue("");
       inputRef.current?.blur();
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [value, onSubmit, isSubmitting]);
+  }, [value, onSubmit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {

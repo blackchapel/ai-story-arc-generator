@@ -95,7 +95,6 @@ StoryCard.displayName = "StoryCard";
 interface StoriesRowProps {
   stories: Story[];
   onStoryClick: (id: string) => void;
-  onAddStory: () => void;
 }
 
 export const StoriesRow = memo<StoriesRowProps>(({ stories, onStoryClick }) => {
@@ -124,46 +123,6 @@ export const StoriesRow = memo<StoriesRowProps>(({ stories, onStoryClick }) => {
         style={{ WebkitOverflowScrolling: "touch" }}
         role="list"
       >
-        {/* Add Story tile */}
-        {/* <button
-            onClick={onAddStory}
-            className="flex h-[144px] w-[86px] flex-shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-none transition-colors duration-150 active:opacity-80"
-            style={{
-              border: "1.5px dashed rgba(245,166,35,0.45)",
-              background: "rgba(245,166,35,0.09)",
-            }}
-            aria-label="Add your story"
-            role="listitem"
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full"
-              style={{
-                background: "linear-gradient(135deg, #F5A623 0%, #EC4899 100%)",
-              }}
-              aria-hidden="true"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M7 1.5v11M1.5 7h11"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <span className="text-center text-[9.5px] font-bold leading-[1.3] text-[#F5A623]">
-              Your
-              <br />
-              Story
-            </span>
-          </button> */}
-
         {/* Story cards */}
         {stories.map((story) => (
           <div key={story.id} role="listitem">

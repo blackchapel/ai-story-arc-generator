@@ -22,7 +22,6 @@ import type { AppView } from "@/types/job";
 
 export default function App() {
   const [view, setView] = useState<AppView>({ screen: "home" });
-
   const [menuOpen, setMenuOpen] = useState(false);
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [activeFilter, setActiveFilter] = useState("all");
@@ -46,19 +45,15 @@ export default function App() {
   }, [arcs]);
 
   const filteredArcs = useMemo(
-    () =>
-      activeFilter === "all"
-        ? arcs
-        : arcs.filter((a) => a.tag === activeFilter),
+    () => (activeFilter === "all" ? arcs : arcs.filter((a) => a.tag === activeFilter)),
     [arcs, activeFilter],
   );
 
   const refreshArcs = useCallback(async () => {
     try {
-      const data = await fetchArcs();
-      setArcs(data);
-    } catch (error) {
-      console.error("Error refreshing arcs:", error);
+      setArcs(await fetchArcs());
+    } catch {
+      // non-critical refresh failure — silently skip
     }
   }, []);
 
@@ -74,25 +69,16 @@ export default function App() {
         const { job_id } = await sendPrompt(value);
         history.pushState(null, "", `/process/${job_id}`);
         setView({ screen: "processing", jobId: job_id });
-      } catch (error) {
-        console.log(error);
+      } catch {
         showToast("Something went wrong. Please try again.");
       }
     },
     [showToast],
   );
 
-  const handleProcessingComplete = useCallback(
-    (htmlContent: string, jobId: string) => {
-      history.replaceState(null, "", `/arc/${jobId}`);
-      setView({ screen: "result", jobId, htmlContent });
-    },
-    [],
-  );
-
-  const handleArticleClick = useCallback((jobId: string) => {
-    history.pushState(null, "", `/arc/${jobId}`);
-    setView({ screen: "result", jobId });
+  const handleProcessingComplete = useCallback((htmlContent: string, jobId: string) => {
+    history.replaceState(null, "", `/arc/${jobId}`);
+    setView({ screen: "result", jobId, htmlContent });
   }, []);
 
   const handleProcessingError = useCallback(
@@ -103,38 +89,28 @@ export default function App() {
     [showToast, goHome],
   );
 
-  const handleMenuOpen = useCallback(() => setMenuOpen(true), []);
-  const handleMenuClose = useCallback(() => setMenuOpen(false), []);
-  const handleFilterSelect = useCallback(
-    (id: string) => setActiveFilter(id),
-    [],
-  );
-  const handleStoryClick = useCallback((id: string) => {
-    const s = STORIES.find((story) => story.id === id) ?? null;
-    setOpenStory(s);
+  const handleArticleClick = useCallback((jobId: string) => {
+    history.pushState(null, "", `/arc/${jobId}`);
+    setView({ screen: "result", jobId });
   }, []);
-  const handleStoryClose = useCallback(() => setOpenStory(null), []);
-  const handleAddStory = useCallback(() => {}, []);
-  const handleProfileClick = useCallback(() => {}, []);
 
+  const handleStoryClick = useCallback((id: string) => {
+    setOpenStory(STORIES.find((s) => s.id === id) ?? null);
+  }, []);
+
+  // Initial arc fetch
   useEffect(() => {
     const controller = new AbortController();
-
-    const loadArcs = async () => {
-      setIsLoadingArcs(true);
-      try {
-        const data = await fetchArcs(controller.signal);
-        setArcs(data);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        console.error("Error fetching arcs:", error);
-        showToast("Failed to load story arcs");
-      } finally {
+    setIsLoadingArcs(true);
+    fetchArcs(controller.signal)
+      .then(setArcs)
+      .catch((err) => {
+        if (!controller.signal.aborted) showToast("Failed to load story arcs");
+        console.error(err);
+      })
+      .finally(() => {
         if (!controller.signal.aborted) setIsLoadingArcs(false);
-      }
-    };
-
-    loadArcs();
+      });
     return () => controller.abort();
   }, [showToast]);
 
@@ -143,24 +119,18 @@ export default function App() {
     const path = window.location.pathname;
     const arcMatch = path.match(/^\/arc\/(.+)$/);
     const processMatch = path.match(/^\/process\/(.+)$/);
-    if (arcMatch) {
-      setView({ screen: "result", jobId: arcMatch[1] });
-    } else if (processMatch) {
-      setView({ screen: "processing", jobId: processMatch[1] });
-    }
+    if (arcMatch) setView({ screen: "result", jobId: arcMatch[1] });
+    else if (processMatch) setView({ screen: "processing", jobId: processMatch[1] });
   }, []);
 
   return (
     <>
-      {/* Global error toast — above every screen */}
       <Toast toast={toast} onDismiss={dismissToast} />
 
-      {/* Stories viewer overlay */}
       {openStory && (
-        <StoryViewer story={openStory} onClose={handleStoryClose} />
+        <StoryViewer story={openStory} onClose={() => setOpenStory(null)} />
       )}
 
-      {/* Processing screen */}
       {view.screen === "processing" && (
         <ProcessingScreen
           jobId={view.jobId}
@@ -170,49 +140,34 @@ export default function App() {
         />
       )}
 
-      {/* Result screen */}
       {view.screen === "result" && (
         <ResultScreen jobId={view.jobId} htmlContent={view.htmlContent} onBack={goHome} />
       )}
 
-      {/* Home screen */}
       {view.screen === "home" && (
         <>
-          <SideMenu isOpen={menuOpen} onClose={handleMenuClose} />
+          <SideMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
 
           <div
             className="relative flex h-dvh w-full flex-col overflow-hidden bg-white"
             style={{
-              boxShadow:
-                "0 0 0 0.5px rgba(0,0,0,0.08), 0 32px 80px rgba(0,0,0,0.18)",
+              boxShadow: "0 0 0 0.5px rgba(0,0,0,0.08), 0 32px 80px rgba(0,0,0,0.18)",
               animation: "homeEnter 0.38s cubic-bezier(0.4,0,0.2,1) both",
             }}
           >
-            {/* Safe-area top spacer */}
             <div
               className="flex-shrink-0"
-              style={{
-                height: "env(safe-area-inset-top, 0px)",
-                background: "#fff",
-              }}
+              style={{ height: "env(safe-area-inset-top, 0px)", background: "#fff" }}
             />
 
             <Header
-              onMenuClick={handleMenuOpen}
-              onProfileClick={handleProfileClick}
+              onMenuClick={() => setMenuOpen(true)}
+              onProfileClick={() => {}}
             />
 
-            {/*
-             * flex-1 but capped by the keyboard height so the prompt bar
-             * stays visible above the keyboard without the page shifting up.
-             * We subtract kbOffset from the available height here instead of
-             * translating the whole shell.
-             */}
             <main
               className="flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               style={{
-                // When keyboard is open, shrink main so the prompt bar
-                // above the keyboard is still reachable without any upward shift
                 maxHeight:
                   kbOffset > 0
                     ? `calc(100dvh - env(safe-area-inset-top, 0px) - 58px - ${kbOffset}px - 72px)`
@@ -221,22 +176,12 @@ export default function App() {
               }}
               aria-label="Main content"
             >
-              <div
-                style={{
-                  // Enough bottom padding so last card clears the prompt bar
-                  paddingBottom:
-                    "calc(80px + env(safe-area-inset-bottom, 0px))",
-                }}
-              >
-                <StoriesRow
-                  stories={STORIES}
-                  onStoryClick={handleStoryClick}
-                  onAddStory={handleAddStory}
-                />
+              <div style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+                <StoriesRow stories={STORIES} onStoryClick={handleStoryClick} />
                 <TopicPills
                   filters={topicFilters}
                   activeId={activeFilter}
-                  onSelect={handleFilterSelect}
+                  onSelect={setActiveFilter}
                 />
                 <NewsFeed
                   articles={filteredArcs}
@@ -248,11 +193,6 @@ export default function App() {
               </div>
             </main>
 
-            {/*
-             * Prompt bar sits here in normal flex flow — flex-shrink-0 keeps
-             * it from being squeezed. No position:fixed, no translateY.
-             * The keyboard slides up underneath it natively.
-             */}
             <div
               className="flex-shrink-0"
               style={{
@@ -268,11 +208,11 @@ export default function App() {
           </div>
 
           <style>{`
-      @keyframes homeEnter {
-        from { opacity: 0; transform: translateY(12px); }
-        to   { opacity: 1; transform: translateY(0);    }
-      }
-    `}</style>
+            @keyframes homeEnter {
+              from { opacity: 0; transform: translateY(12px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
         </>
       )}
     </>

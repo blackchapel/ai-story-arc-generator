@@ -21,6 +21,7 @@ from src.schemas.output_schema import OutputSchema
 from src.schemas.notification_schema import NotificationSchema
 from src.database import SessionLocal
 from src.services.email_service import send_arc_ready_email
+from src.services.gcs_service import upload_bytes, upload_text
 
 load_dotenv()
 
@@ -163,11 +164,27 @@ def generate_panel_images(analysis: ArcModel) -> None:
             print(f"  [✗] Panel {i} failed: {exc}")
 
 
-def assemble_arc(analysis: ArcModel, job_id: str) -> str:
+def assemble_arc(analysis: ArcModel) -> str:
     print("[*] Assembling HTML")
     with open("public/index.html", "r", encoding="utf-8") as f:
         html = f.read()
     return html.replace("{{ARC_DATA}}", json.dumps(analysis.model_dump(), ensure_ascii=True))
+
+
+def upload_arc_assets(job_id: str, html: str, thumbnail_b64: str) -> tuple[str, str]:
+    """Upload the arc HTML and thumbnail image to GCS. Returns (html_url, img_url)."""
+    print("[*] Uploading to GCS")
+
+    html_url = upload_text(html, f"arcs/{job_id}/arc.html")
+    print(f"  [✓] HTML → {html_url}")
+
+    # thumbnail_b64 is a data URI: "data:image/jpeg;base64,<data>"
+    b64_data = thumbnail_b64.split(",", 1)[1] if "," in thumbnail_b64 else thumbnail_b64
+    img_bytes = base64.b64decode(b64_data)
+    img_url = upload_bytes(img_bytes, f"arcs/{job_id}/thumbnail.jpg", "image/jpeg")
+    print(f"  [✓] Thumbnail → {img_url}")
+
+    return html_url, img_url
 
 
 class _TagStripper(HTMLParser):
@@ -267,16 +284,17 @@ def run_pipeline(
         generate_panel_images(analysis)
 
         emit("ASSEMBLING")
-        html = assemble_arc(analysis, job_id)
+        html = assemble_arc(analysis)
+        html_url, img_url = upload_arc_assets(job_id, html, analysis.panels[0].image)
         _save_arc_to_db(
             job_id,
             _strip_tags(analysis.topic.title),
             analysis.topic.subtitle,
-            analysis.panels[0].image,
+            img_url,
             analysis.sources,
             analysis.topic.eyebrow.split(".")[0].strip(),
             analysis.theme.accent,
-            html,
+            html_url,
         )
 
         emit("COMPLETED")

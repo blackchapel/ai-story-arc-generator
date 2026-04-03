@@ -20,6 +20,18 @@ import { STORIES, PROMPT_CHIPS } from "@/data";
 import type { NewsArticle, Story } from "@/types";
 import type { AppView } from "@/types/job";
 
+// ─── Navigation helpers ───────────────────────────────────────────────────────
+
+function resolveViewFromPath(path: string): AppView {
+  const arcMatch = path.match(/^\/arc\/(.+)$/);
+  const processMatch = path.match(/^\/process\/(.+)$/);
+  if (arcMatch) return { screen: "result", jobId: arcMatch[1] };
+  if (processMatch) return { screen: "processing", jobId: processMatch[1] };
+  return { screen: "home" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function App() {
   const [view, setView] = useState<AppView>({ screen: "home" });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -49,37 +61,85 @@ export default function App() {
     [arcs, activeFilter],
   );
 
+  // ─── Navigation ────────────────────────────────────────────────────────────
+
+  const navigate = useCallback((nextView: AppView, url: string, replace = false) => {
+    if (replace) {
+      history.replaceState(nextView, "", url);
+    } else {
+      history.pushState(nextView, "", url);
+    }
+    setView(nextView);
+  }, []);
+
   const refreshArcs = useCallback(async () => {
     try {
       setArcs(await fetchArcs());
     } catch {
-      // non-critical refresh failure — silently skip
+      // non-critical background refresh
     }
   }, []);
 
   const goHome = useCallback(() => {
-    history.replaceState(null, "", "/");
-    setView({ screen: "home" });
+    navigate({ screen: "home" }, "/", true);
     refreshArcs();
+  }, [navigate, refreshArcs]);
+
+  // ─── Restore state on initial load & handle deep links ─────────────────────
+  // If the user opens the app directly to /arc/xxx (e.g. from a notification or
+  // shared link), we inject a synthetic home entry at the bottom of the history
+  // stack so the back gesture always has somewhere to land instead of closing
+  // the app or leaving the PWA scope.
+  useEffect(() => {
+    const path = window.location.pathname;
+    const initialView = resolveViewFromPath(path);
+
+    if (initialView.screen !== "home") {
+      // Lay down home at position 0, then push the deep-link destination.
+      history.replaceState({ screen: "home" } satisfies AppView, "", "/");
+      history.pushState(initialView, "", path);
+    } else {
+      // Tag the home entry so popstate can read it.
+      history.replaceState(initialView, "", "/");
+    }
+
+    setView(initialView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally runs once on mount
+
+  // ─── popstate — back/forward gesture and browser buttons ───────────────────
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      const nextView: AppView = e.state ?? resolveViewFromPath(window.location.pathname);
+      setView(nextView);
+      if (nextView.screen === "home") refreshArcs();
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, [refreshArcs]);
+
+  // ─── Handlers ──────────────────────────────────────────────────────────────
 
   const handlePromptSubmit = useCallback(
     async (value: string) => {
       try {
         const { job_id } = await sendPrompt(value);
-        history.pushState(null, "", `/process/${job_id}`);
-        setView({ screen: "processing", jobId: job_id });
+        navigate({ screen: "processing", jobId: job_id }, `/process/${job_id}`);
       } catch {
         showToast("Something went wrong. Please try again.");
       }
     },
-    [showToast],
+    [navigate, showToast],
   );
 
-  const handleProcessingComplete = useCallback((htmlContent: string, jobId: string) => {
-    history.replaceState(null, "", `/arc/${jobId}`);
-    setView({ screen: "result", jobId, htmlContent });
-  }, []);
+  const handleProcessingComplete = useCallback(
+    (htmlUrl: string, jobId: string) => {
+      // Replace the /process entry so back goes home, not back to processing.
+      navigate({ screen: "result", jobId, htmlUrl }, `/arc/${jobId}`, true);
+    },
+    [navigate],
+  );
 
   const handleProcessingError = useCallback(
     (message: string) => {
@@ -89,16 +149,18 @@ export default function App() {
     [showToast, goHome],
   );
 
-  const handleArticleClick = useCallback((jobId: string) => {
-    history.pushState(null, "", `/arc/${jobId}`);
-    setView({ screen: "result", jobId });
-  }, []);
+  const handleArticleClick = useCallback(
+    (jobId: string) => navigate({ screen: "result", jobId }, `/arc/${jobId}`),
+    [navigate],
+  );
 
-  const handleStoryClick = useCallback((id: string) => {
-    setOpenStory(STORIES.find((s) => s.id === id) ?? null);
-  }, []);
+  const handleStoryClick = useCallback(
+    (id: string) => setOpenStory(STORIES.find((s) => s.id === id) ?? null),
+    [],
+  );
 
-  // Initial arc fetch
+  // ─── Initial arc fetch ──────────────────────────────────────────────────────
+
   useEffect(() => {
     const controller = new AbortController();
     setIsLoadingArcs(true);
@@ -114,14 +176,7 @@ export default function App() {
     return () => controller.abort();
   }, [showToast]);
 
-  // Restore screen from URL on initial load
-  useEffect(() => {
-    const path = window.location.pathname;
-    const arcMatch = path.match(/^\/arc\/(.+)$/);
-    const processMatch = path.match(/^\/process\/(.+)$/);
-    if (arcMatch) setView({ screen: "result", jobId: arcMatch[1] });
-    else if (processMatch) setView({ screen: "processing", jobId: processMatch[1] });
-  }, []);
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -141,7 +196,11 @@ export default function App() {
       )}
 
       {view.screen === "result" && (
-        <ResultScreen jobId={view.jobId} htmlContent={view.htmlContent} onBack={goHome} />
+        <ResultScreen
+          jobId={view.jobId}
+          htmlUrl={view.htmlUrl}
+          onBack={goHome}
+        />
       )}
 
       {view.screen === "home" && (

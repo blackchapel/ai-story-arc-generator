@@ -6,7 +6,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export type PollerState =
   | { phase: "polling"; status: JobStatus }
-  | { phase: "done"; htmlContent: string }
+  | { phase: "done"; htmlUrl: string }
   | { phase: "error"; message: string };
 
 export function useJobPoller(jobId: string) {
@@ -51,7 +51,7 @@ export function useJobPoller(jobId: string) {
         try {
           const res = await fetchOutput(jobId);
           if (!stoppedRef.current && res.html) {
-            setState({ phase: "done", htmlContent: res.html });
+            setState({ phase: "done", htmlUrl: res.html });
           }
         } catch {
           if (!stoppedRef.current) {

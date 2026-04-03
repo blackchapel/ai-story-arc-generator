@@ -32,4 +32,4 @@ export interface FetchArcResponse {
 export type AppView =
   | { screen: "home" }
   | { screen: "processing"; jobId: string }
-  | { screen: "result"; jobId: string; htmlContent?: string };
+  | { screen: "result"; jobId: string; htmlUrl?: string };

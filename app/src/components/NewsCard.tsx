@@ -56,7 +56,7 @@ export const NewsCard = memo<NewsCardProps>(
         role="button"
         onKeyDown={(e) => e.key === "Enter" && handleClick()}
         aria-label={`Read: ${article.title}`}
-        className="relative flex items-center cursor-pointer items-start gap-3 border-b border-[#EBEBEB] px-[18px] py-[14px] last:border-b-0 active:bg-[#F5F5F5]"
+        className="relative flex items-center cursor-pointer gap-3 border-b border-[#EBEBEB] px-[18px] py-[14px] last:border-b-0 active:bg-[#F5F5F5]"
         style={{
           animation: `cardReveal 0.5s cubic-bezier(0.4,0,0.2,1) ${index * 0.05 + 0.04}s both`,
           outline: "none",

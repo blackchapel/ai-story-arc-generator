@@ -248,7 +248,7 @@ StepRow.displayName = "StepRow";
 
 interface ProcessingScreenProps {
   jobId: string;
-  onComplete: (htmlContent: string, jobId: string) => void;
+  onComplete: (htmlUrl: string, jobId: string) => void;
   onError: (message: string) => void;
   onBack: () => void;
 }
@@ -261,11 +261,16 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
     const angleRef = useRef(135);
 
     // ── Notify modal ──────────────────────────────────────────────────────────
+    const STORAGE_KEY = `arc-notified-${jobId}`;
+
     type ModalState = "closed" | "form" | "submitting" | "confirmed";
     const [modalState, setModalState] = useState<ModalState>("closed");
     const [email, setEmail] = useState("");
     const [notifyError, setNotifyError] = useState<string | null>(null);
-    const confirmedEmail = useRef("");
+    // Persisted email — set on successful submission and restored on mount
+    const [notifiedEmail, setNotifiedEmail] = useState<string | null>(
+      () => localStorage.getItem(STORAGE_KEY),
+    );
 
     const openModal = useCallback(() => {
       setModalState("form");
@@ -279,13 +284,14 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
       setModalState("submitting");
       try {
         await notifyArc(jobId, email.trim());
-        confirmedEmail.current = email.trim();
+        localStorage.setItem(STORAGE_KEY, email.trim());
+        setNotifiedEmail(email.trim());
         setModalState("confirmed");
       } catch {
         setNotifyError("Something went wrong. Please try again.");
         setModalState("form");
       }
-    }, [jobId, email]);
+    }, [jobId, email, STORAGE_KEY]);
 
     // Rotating gradient + live theme-color sync
     useEffect(() => {
@@ -319,7 +325,7 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
     useEffect(() => {
       if (state.phase === "done") {
         stop();
-        onComplete(state.htmlContent, jobId);
+        onComplete(state.htmlUrl, jobId);
       } else if (state.phase === "error") {
         stop();
         onError(state.message);
@@ -407,30 +413,30 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           style={{ borderTop: "1px solid #F5F5F5" }}
         >
           <button
-            onClick={openModal}
-            className="mb-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#EBEBEB] bg-[#F5F5F5] px-4 py-[11px] text-[13px] font-semibold text-[#0C0C0C] transition-colors active:bg-[#EDEDED]"
+            onClick={notifiedEmail ? undefined : openModal}
+            disabled={!!notifiedEmail}
+            className={`mb-3 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-[11px] text-[13px] font-semibold transition-colors ${
+              notifiedEmail
+                ? "cursor-default border-[#E8F5F0] bg-[rgba(16,185,129,0.07)] text-[#10B981]"
+                : "cursor-pointer border-[#EBEBEB] bg-[#F5F5F5] text-[#0C0C0C] active:bg-[#EDEDED]"
+            }`}
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 15 15"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M7.5 1a6.5 6.5 0 1 1 0 13A6.5 6.5 0 0 1 7.5 1Z"
-                stroke="#6366F1"
-                strokeWidth="1.3"
-              />
-              <path
-                d="M7.5 4.5v4l2.5 1.5"
-                stroke="#6366F1"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            Notify me when it's ready
+            {notifiedEmail ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path d="M2 7l4 4 6-6" stroke="#10B981" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                You're on the list
+              </>
+            ) : (
+              <>
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                  <path d="M7.5 1a6.5 6.5 0 1 1 0 13A6.5 6.5 0 0 1 7.5 1Z" stroke="#6366F1" strokeWidth="1.3" />
+                  <path d="M7.5 4.5v4l2.5 1.5" stroke="#6366F1" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Notify me when it's ready
+              </>
+            )}
           </button>
           <p className="text-[11px] text-[#ABABAB]">
             You can close this tab — we'll keep it warm.
@@ -518,7 +524,7 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
                     We'll email you at
                   </p>
                   <p className="mb-3 text-[14px] font-bold text-[#6366F1]">
-                    {confirmedEmail.current}
+                    {notifiedEmail}
                   </p>
                   <p className="text-[13px] leading-relaxed text-[#8C8C8C]">
                     As soon as your arc is done generating, you'll get a link

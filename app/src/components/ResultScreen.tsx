@@ -1,37 +1,27 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { fetchOutput } from "@/apis";
 
 interface ResultScreenProps {
   jobId: string;
-  htmlContent?: string;
+  htmlUrl?: string;
   onBack: () => void;
 }
 
 export const ResultScreen = memo<ResultScreenProps>(
-  ({ jobId, htmlContent: initialHtml, onBack }) => {
-    const iframeRef = useRef<HTMLIFrameElement>(null);
+  ({ jobId, htmlUrl: initialHtmlUrl, onBack }) => {
     const [loaded, setLoaded] = useState(false);
-    const [html, setHtml] = useState<string | null>(initialHtml ?? null);
+    const [htmlUrl, setHtmlUrl] = useState<string | null>(initialHtmlUrl ?? null);
     const [fetchError, setFetchError] = useState(false);
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
-    // Fetch HTML if not provided (e.g. direct URL navigation or card tap)
+    // Fetch the GCS URL if not passed in (card tap or direct URL navigation)
     useEffect(() => {
-      if (initialHtml) return;
+      if (initialHtmlUrl) return;
       const controller = new AbortController();
       fetchOutput(jobId)
-        .then((arc) => { if (!controller.signal.aborted) setHtml(arc.html ?? null); })
+        .then((arc) => { if (!controller.signal.aborted) setHtmlUrl(arc.html ?? null); })
         .catch(() => { if (!controller.signal.aborted) setFetchError(true); });
       return () => controller.abort();
-    }, [jobId, initialHtml]);
-
-    // Blob URL for full fidelity rendering (scripts, styles, relative assets)
-    useEffect(() => {
-      if (!html) return;
-      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-      setBlobUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }, [html]);
+    }, [jobId, initialHtmlUrl]);
 
     const handleShare = useCallback(() => {
       if (navigator.share) {
@@ -91,8 +81,8 @@ export const ResultScreen = memo<ResultScreenProps>(
 
         {/* Content */}
         <div className="relative flex-1 overflow-hidden">
-          {/* Shimmer while fetching or iframe loading */}
-          {(!html || !loaded) && !fetchError && (
+          {/* Shimmer while GCS URL is loading or iframe hasn't painted */}
+          {(!htmlUrl || !loaded) && !fetchError && (
             <div className="absolute inset-0 z-10 bg-white">
               <div className="flex flex-col gap-4 p-5 pt-8">
                 {[80, 55, 90, 40, 70].map((w, i) => (
@@ -126,14 +116,14 @@ export const ResultScreen = memo<ResultScreenProps>(
             </div>
           )}
 
-          {blobUrl && (
+          {/* Iframe points directly at the public GCS URL — no blob needed */}
+          {htmlUrl && (
             <iframe
-              ref={iframeRef}
-              src={blobUrl}
+              src={htmlUrl}
               onLoad={() => setLoaded(true)}
               title="Your arc story"
               className="h-full w-full border-none"
-              sandbox="allow-scripts allow-same-origin allow-popups"
+              sandbox="allow-scripts allow-popups"
               loading="eager"
             />
           )}

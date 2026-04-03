@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchStatus, fetchOutput } from "@/apis";
+import { fetchOutput } from "@/apis";
 import type { JobStatus } from "@/types/job";
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export type PollerState =
   | { phase: "polling"; status: JobStatus }
   | { phase: "done"; htmlContent: string }
   | { phase: "error"; message: string };
-
-const POLL_INTERVAL_MS = 2000; // 2 s between polls
-const MAX_POLL_ATTEMPTS = 1000; // 5 min ceiling at 2 s cadence
 
 export function useJobPoller(jobId: string) {
   const [state, setState] = useState<PollerState>({
@@ -16,71 +15,64 @@ export function useJobPoller(jobId: string) {
     status: "FETCHING_ARTICLES",
   });
 
-  // Allow caller to request an abort (e.g. user navigates away)
-  const abortRef = useRef(false);
-  const attemptsRef = useRef(0);
+  const stoppedRef = useRef(false);
 
   const stop = useCallback(() => {
-    abortRef.current = true;
+    stoppedRef.current = true;
   }, []);
 
   useEffect(() => {
     if (!jobId) return;
-    abortRef.current = false;
-    attemptsRef.current = 0;
+    stoppedRef.current = false;
 
-    let timeoutId: ReturnType<typeof setTimeout>;
+    const es = new EventSource(`${BASE_URL}/api/arc/stream/${jobId}`);
 
-    async function poll() {
-      if (abortRef.current) return;
-
-      if (attemptsRef.current >= MAX_POLL_ATTEMPTS) {
-        setState({
-          phase: "error",
-          message: "Timed out waiting for your arc.",
-        });
+    es.onmessage = async (event: MessageEvent) => {
+      if (stoppedRef.current) {
+        es.close();
         return;
       }
 
+      let status: JobStatus;
       try {
-        const { status } = await fetchStatus(jobId);
+        ({ status } = JSON.parse(event.data) as { status: JobStatus });
+      } catch {
+        return;
+      }
 
-        if (abortRef.current) return;
+      if (status === "FAILED") {
+        es.close();
+        setState({ phase: "error", message: "Something went wrong generating your arc." });
+        return;
+      }
 
-        if (status === "FAILED") {
-          setState({
-            phase: "error",
-            message: "Something went wrong generating your arc.",
-          });
-          return;
-        }
-
-        if (status === "COMPLETED") {
+      if (status === "COMPLETED") {
+        es.close();
+        try {
           const res = await fetchOutput(jobId);
-          if (abortRef.current) return;
-          if (res.html) {
+          if (!stoppedRef.current && res.html) {
             setState({ phase: "done", htmlContent: res.html });
           }
-          return;
+        } catch {
+          if (!stoppedRef.current) {
+            setState({ phase: "error", message: "Failed to load your arc." });
+          }
         }
-
-        // Still in progress — update displayed status and keep polling
-        setState({ phase: "polling", status });
-        attemptsRef.current += 1;
-        timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
-      } catch {
-        if (abortRef.current) return;
-        // Retry on network hiccup — don't surface transient errors
-        attemptsRef.current += 1;
-        timeoutId = setTimeout(poll, POLL_INTERVAL_MS * 2);
+        return;
       }
-    }
 
-    poll();
+      setState({ phase: "polling", status });
+    };
+
+    es.onerror = () => {
+      if (stoppedRef.current) return;
+      es.close();
+      setState({ phase: "error", message: "Lost connection to server. Please try again." });
+    };
 
     return () => {
-      abortRef.current = true;
-      clearTimeout(timeoutId);
+      stoppedRef.current = true;
+      es.close();
     };
   }, [jobId]);
 

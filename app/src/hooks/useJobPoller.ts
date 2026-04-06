@@ -42,7 +42,10 @@ export function useJobPoller(jobId: string) {
 
       if (status === "FAILED") {
         es.close();
-        setState({ phase: "error", message: "Something went wrong generating your arc." });
+        setState({
+          phase: "error",
+          message: "Something went wrong generating your arc.",
+        });
         return;
       }
 
@@ -66,8 +69,12 @@ export function useJobPoller(jobId: string) {
 
     es.onerror = () => {
       if (stoppedRef.current) return;
-      es.close();
-      setState({ phase: "error", message: "Lost connection to server. Please try again." });
+      if (es.readyState === EventSource.CLOSED) {
+        setState({
+          phase: "error",
+          message: "Something went wrong generating your arc.",
+        });
+      }
     };
 
     return () => {

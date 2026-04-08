@@ -36,7 +36,7 @@ export const Toast = memo<ToastProps>(({ toast, onDismiss }) => {
     >
       <div
         onClick={onDismiss}
-        className="pointer-events-auto flex cursor-pointer items-start gap-3 rounded-xl px-4 py-3 shadow-lg"
+        className="pointer-events-auto flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 shadow-lg"
         style={{
           background: "#FFF0F0",
           border: "1px solid rgba(239,68,68,0.2)",

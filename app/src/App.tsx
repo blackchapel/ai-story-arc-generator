@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   Header,
@@ -10,119 +10,207 @@ import {
   Toast,
   ProcessingScreen,
   ResultScreen,
+  SharedArcScreen,
   StoryViewer,
+  AuthPage,
+  InProgressSection,
 } from "@/components";
+import { AuthProvider } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { useBookmarks } from "@/hooks/useBookmarks";
 import { useKeyboardOffset } from "@/hooks/useKeyboardOffset";
 import { useToast } from "@/hooks/useToast";
-import { fetchArcs, sendPrompt } from "@/apis";
+import { fetchArcs, sendPrompt, fetchActiveJobs } from "@/apis";
 import { STORIES, PROMPT_CHIPS } from "@/data";
-import type { NewsArticle, Story } from "@/types";
+import type { NewsArticle, Story, ActiveJob } from "@/types";
 import type { AppView } from "@/types/job";
 
-// ─── Navigation helpers ───────────────────────────────────────────────────────
+// ── URL → view state ──────────────────────────────────────────────────────────
 
-function resolveViewFromPath(path: string): AppView {
+function resolveView(path: string): AppView {
   const arcMatch = path.match(/^\/arc\/(.+)$/);
   const processMatch = path.match(/^\/process\/(.+)$/);
+  const sharedMatch = path.match(/^\/shared\/(.+)$/);
+  const authMatch = path === "/auth";
   if (arcMatch) return { screen: "result", jobId: arcMatch[1] };
   if (processMatch) return { screen: "processing", jobId: processMatch[1] };
+  if (sharedMatch) return { screen: "shared", shareToken: sharedMatch[1] };
+  if (authMatch) return { screen: "auth" };
   return { screen: "home" };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Inner app (consumes AuthContext) ──────────────────────────────────────────
 
-export default function App() {
+function AppInner() {
+  const { user, isLoading: authLoading } = useAuth();
+
   const [view, setView] = useState<AppView>({ screen: "home" });
   const [menuOpen, setMenuOpen] = useState(false);
   const [openStory, setOpenStory] = useState<Story | null>(null);
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilter, setFilter] = useState("all");
   const [arcs, setArcs] = useState<NewsArticle[]>([]);
-  const [isLoadingArcs, setIsLoadingArcs] = useState(true);
+  const [loadingArcs, setLoadingArcs] = useState(false);
+  const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([]);
+
+  const [pendingPrompt, setPending] = useState<string | null>(null);
 
   const { isBookmarked, toggle: toggleBookmark } = useBookmarks();
   const { toast, showToast, dismissToast } = useToast();
   const kbOffset = useKeyboardOffset();
 
+  // ── Session expiry detection ──────────────────────────────────────────────
+  const prevUserRef = useRef(user);
+  useEffect(() => {
+    if (prevUserRef.current !== null && user === null) {
+      showToast("Your session expired. Please log in again.");
+    }
+    prevUserRef.current = user;
+  }, [user, showToast]);
+
+  // ── Derived: filters + filtered list ─────────────────────────────────────
   const topicFilters = useMemo(() => {
     const seen = new Set<string>();
-    const filters = [{ id: "all", label: "All" }];
-    for (const arc of arcs) {
-      if (arc.tag && !seen.has(arc.tag)) {
-        seen.add(arc.tag);
-        filters.push({ id: arc.tag, label: arc.tag });
+    const out = [{ id: "all", label: "All" }];
+    for (const a of arcs) {
+      if (a.tag && !seen.has(a.tag)) {
+        seen.add(a.tag);
+        out.push({ id: a.tag, label: a.tag });
       }
     }
-    return filters;
+    return out;
   }, [arcs]);
 
   const filteredArcs = useMemo(
-    () => (activeFilter === "all" ? arcs : arcs.filter((a) => a.tag === activeFilter)),
+    () =>
+      activeFilter === "all"
+        ? arcs
+        : arcs.filter((a) => a.tag === activeFilter),
     [arcs, activeFilter],
   );
 
-  // ─── Navigation ────────────────────────────────────────────────────────────
-
-  const navigate = useCallback((nextView: AppView, url: string, replace = false) => {
-    if (replace) {
-      history.replaceState(nextView, "", url);
-    } else {
-      history.pushState(nextView, "", url);
-    }
-    setView(nextView);
-  }, []);
+  // ── Navigation ────────────────────────────────────────────────────────────
+  const navigate = useCallback(
+    (nextView: AppView, url: string, replace = false) => {
+      replace
+        ? history.replaceState(nextView, "", url)
+        : history.pushState(nextView, "", url);
+      setView(nextView);
+    },
+    [],
+  );
 
   const refreshArcs = useCallback(async () => {
+    if (!user) {
+      setArcs([]);
+      return;
+    }
     try {
       setArcs(await fetchArcs());
     } catch {
-      // non-critical background refresh
+      /* silent */
     }
-  }, []);
+  }, [user]);
+
+  const refreshActiveJobs = useCallback(async () => {
+    if (!user) {
+      setActiveJobs([]);
+      return;
+    }
+    try {
+      setActiveJobs(await fetchActiveJobs());
+    } catch {
+      /* silent */
+    }
+  }, [user]);
 
   const goHome = useCallback(() => {
     navigate({ screen: "home" }, "/", true);
     refreshArcs();
-  }, [navigate, refreshArcs]);
+    refreshActiveJobs();
+  }, [navigate, refreshArcs, refreshActiveJobs]);
 
-  // ─── Restore state on initial load & handle deep links ─────────────────────
-  // If the user opens the app directly to /arc/xxx (e.g. from a notification or
-  // shared link), we inject a synthetic home entry at the bottom of the history
-  // stack so the back gesture always has somewhere to land instead of closing
-  // the app or leaving the PWA scope.
+  // ── Deep-link handling on mount ───────────────────────────────────────────
   useEffect(() => {
     const path = window.location.pathname;
-    const initialView = resolveViewFromPath(path);
-
+    const initialView = resolveView(path);
     if (initialView.screen !== "home") {
-      // Lay down home at position 0, then push the deep-link destination.
       history.replaceState({ screen: "home" } satisfies AppView, "", "/");
       history.pushState(initialView, "", path);
     } else {
-      // Tag the home entry so popstate can read it.
       history.replaceState(initialView, "", "/");
     }
-
     setView(initialView);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally runs once on mount
+  }, []);
 
-  // ─── popstate — back/forward gesture and browser buttons ───────────────────
   useEffect(() => {
-    const onPopState = (e: PopStateEvent) => {
-      const nextView: AppView = e.state ?? resolveViewFromPath(window.location.pathname);
+    const handler = (e: PopStateEvent) => {
+      const nextView: AppView =
+        e.state ?? resolveView(window.location.pathname);
       setView(nextView);
       if (nextView.screen === "home") refreshArcs();
     };
-
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
   }, [refreshArcs]);
 
-  // ─── Handlers ──────────────────────────────────────────────────────────────
+  // ── Active jobs fetch + live polling ────────────────────────────────────
+  useEffect(() => {
+    if (authLoading || !user || view.screen !== "home") {
+      if (!user) setActiveJobs([]);
+      return;
+    }
+    refreshActiveJobs();
+  }, [user, authLoading, view.screen, refreshActiveJobs]);
 
+  useEffect(() => {
+    if (view.screen !== "home" || !user || activeJobs.length === 0) return;
+    const id = setInterval(refreshActiveJobs, 3000);
+    return () => clearInterval(id);
+  }, [view.screen, user, activeJobs.length, refreshActiveJobs]);
+
+  // ── Refresh arcs when a job completes ────────────────────────────────────
+  const prevJobCountRef = useRef(activeJobs.length);
+  useEffect(() => {
+    if (activeJobs.length < prevJobCountRef.current) refreshArcs();
+    prevJobCountRef.current = activeJobs.length;
+  }, [activeJobs.length, refreshArcs]);
+
+  // ── Arc fetch (only when logged in) ──────────────────────────────────────
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setArcs([]);
+      setLoadingArcs(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    setLoadingArcs(true);
+    fetchArcs(ctrl.signal)
+      .then(setArcs)
+      .catch((err) => {
+        if (!ctrl.signal.aborted) showToast("Failed to load story arcs");
+        console.error(err);
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setLoadingArcs(false);
+      });
+    return () => ctrl.abort();
+  }, [user, authLoading, showToast]);
+
+  // ── Open auth ─────────────────────────────────────────────────────────────
+  const openAuth = useCallback(() => {
+    navigate({ screen: "auth" }, "/auth");
+  }, [navigate]);
+
+  // ── Prompt submit ─────────────────────────────────────────────────────────
   const handlePromptSubmit = useCallback(
     async (value: string) => {
+      if (!user) {
+        setPending(value);
+        openAuth();
+        return;
+      }
       try {
         const { job_id } = await sendPrompt(value);
         navigate({ screen: "processing", jobId: job_id }, `/process/${job_id}`);
@@ -130,12 +218,35 @@ export default function App() {
         showToast("Something went wrong. Please try again.");
       }
     },
-    [navigate, showToast],
+    [user, navigate, showToast, openAuth],
   );
 
+  // ── Auth success ──────────────────────────────────────────────────────────
+  const handleAuthSuccess = useCallback(
+    (redirect?: AppView) => {
+      if (redirect) {
+        navigate(
+          redirect,
+          redirect.screen === "processing"
+            ? `/process/${(redirect as { screen: "processing"; jobId: string }).jobId}`
+            : "/",
+        );
+      } else if (pendingPrompt) {
+        const p = pendingPrompt;
+        setPending(null);
+        goHome();
+        // Submit after navigation completes
+        handlePromptSubmit(p);
+      } else {
+        goHome();
+      }
+    },
+    [pendingPrompt, navigate, goHome, handlePromptSubmit],
+  );
+
+  // ── Other handlers ────────────────────────────────────────────────────────
   const handleProcessingComplete = useCallback(
     (htmlUrl: string, jobId: string) => {
-      // Replace the /process entry so back goes home, not back to processing.
       navigate({ screen: "result", jobId, htmlUrl }, `/arc/${jobId}`, true);
     },
     [navigate],
@@ -150,33 +261,17 @@ export default function App() {
   );
 
   const handleArticleClick = useCallback(
-    (jobId: string) => navigate({ screen: "result", jobId }, `/arc/${jobId}`),
+    (jobId: string) => {
+      navigate({ screen: "result", jobId }, `/arc/${jobId}`);
+    },
     [navigate],
   );
 
-  const handleStoryClick = useCallback(
-    (id: string) => setOpenStory(STORIES.find((s) => s.id === id) ?? null),
-    [],
-  );
+  const handleStoryClick = useCallback((id: string) => {
+    setOpenStory(STORIES.find((s) => s.id === id) ?? null);
+  }, []);
 
-  // ─── Initial arc fetch ──────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setIsLoadingArcs(true);
-    fetchArcs(controller.signal)
-      .then(setArcs)
-      .catch((err) => {
-        if (!controller.signal.aborted) showToast("Failed to load story arcs");
-        console.error(err);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoadingArcs(false);
-      });
-    return () => controller.abort();
-  }, [showToast]);
-
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -184,6 +279,14 @@ export default function App() {
 
       {openStory && (
         <StoryViewer story={openStory} onClose={() => setOpenStory(null)} />
+      )}
+
+      {view.screen === "auth" && (
+        <AuthPage
+          redirectAfter={view.redirectAfter}
+          onSuccess={handleAuthSuccess}
+          onBack={goHome}
+        />
       )}
 
       {view.screen === "processing" && (
@@ -203,6 +306,17 @@ export default function App() {
         />
       )}
 
+      {view.screen === "shared" && (
+        <SharedArcScreen
+          shareToken={view.shareToken}
+          onBack={goHome}
+          onSignIn={openAuth}
+          onOwnArc={(arcId) =>
+            navigate({ screen: "result", jobId: arcId }, `/arc/${arcId}`, true)
+          }
+        />
+      )}
+
       {view.screen === "home" && (
         <>
           <SideMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
@@ -210,18 +324,22 @@ export default function App() {
           <div
             className="relative flex h-dvh w-full flex-col overflow-hidden bg-white"
             style={{
-              boxShadow: "0 0 0 0.5px rgba(0,0,0,0.08), 0 32px 80px rgba(0,0,0,0.18)",
+              boxShadow:
+                "0 0 0 0.5px rgba(0,0,0,0.08), 0 32px 80px rgba(0,0,0,0.18)",
               animation: "homeEnter 0.38s cubic-bezier(0.4,0,0.2,1) both",
             }}
           >
             <div
               className="flex-shrink-0"
-              style={{ height: "env(safe-area-inset-top, 0px)", background: "#fff" }}
+              style={{
+                height: "env(safe-area-inset-top, 0px)",
+                background: "#fff",
+              }}
             />
 
             <Header
               onMenuClick={() => setMenuOpen(true)}
-              onProfileClick={() => {}}
+              onProfileClick={openAuth}
             />
 
             <main
@@ -229,25 +347,40 @@ export default function App() {
               style={{
                 maxHeight:
                   kbOffset > 0
-                    ? `calc(100dvh - env(safe-area-inset-top, 0px) - 58px - ${kbOffset}px - 72px)`
+                    ? `calc(100dvh - env(safe-area-inset-top,0px) - 58px - ${kbOffset}px - 72px)`
                     : undefined,
                 transition: "max-height 0.28s cubic-bezier(0.4,0,0.2,1)",
               }}
               aria-label="Main content"
             >
-              <div style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+              <div
+                style={{
+                  paddingBottom: "calc(80px + env(safe-area-inset-bottom,0px))",
+                }}
+              >
                 <StoriesRow stories={STORIES} onStoryClick={handleStoryClick} />
+                <InProgressSection
+                  jobs={activeJobs}
+                  onJobClick={(jobId) =>
+                    navigate(
+                      { screen: "processing", jobId },
+                      `/process/${jobId}`,
+                    )
+                  }
+                />
                 <TopicPills
                   filters={topicFilters}
                   activeId={activeFilter}
-                  onSelect={setActiveFilter}
+                  onSelect={setFilter}
                 />
                 <NewsFeed
                   articles={filteredArcs}
+                  filterKey={activeFilter}
                   isBookmarked={isBookmarked}
                   onBookmark={toggleBookmark}
                   onArticleClick={handleArticleClick}
-                  isLoading={isLoadingArcs && arcs.length === 0}
+                  onSignInClick={openAuth}
+                  isLoading={loadingArcs && arcs.length === 0}
                 />
               </div>
             </main>
@@ -259,21 +392,31 @@ export default function App() {
                 backdropFilter: "blur(28px) saturate(1.6)",
                 WebkitBackdropFilter: "blur(28px) saturate(1.6)",
                 borderTop: "1px solid rgba(235,235,235,0.8)",
-                paddingBottom: "env(safe-area-inset-bottom, 0px)",
+                paddingBottom: "env(safe-area-inset-bottom,0px)",
               }}
             >
-              <PromptBar chips={PROMPT_CHIPS} onSubmit={handlePromptSubmit} />
+              <PromptBar
+                chips={PROMPT_CHIPS}
+                onSubmit={handlePromptSubmit}
+                onAuthRequired={openAuth}
+                showToast={showToast}
+              />
             </div>
           </div>
 
-          <style>{`
-            @keyframes homeEnter {
-              from { opacity: 0; transform: translateY(12px); }
-              to   { opacity: 1; transform: translateY(0); }
-            }
-          `}</style>
+          <style>{`@keyframes homeEnter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
         </>
       )}
     </>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }

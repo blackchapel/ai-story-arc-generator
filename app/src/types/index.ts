@@ -1,3 +1,12 @@
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 // ─── Category ────────────────────────────────────────────────────────────────
 
 export type Category =
@@ -22,6 +31,7 @@ export interface Story {
 
 export interface NewsArticle {
   id: string;
+  user_id?: string;
   title: string;
   description: string;
   img: string;
@@ -29,6 +39,18 @@ export interface NewsArticle {
   tag_text_color: string;
   source_names: string[];
   html?: string;
+  is_shared: boolean;
+  share_token?: string;
+  is_saved: boolean;
+}
+
+// ─── ActiveJob ───────────────────────────────────────────────────────────────
+
+export interface ActiveJob {
+  job_id: string;
+  prompt: string;
+  status: string;
+  created_at: string;
 }
 
 // ─── TopicFilter ─────────────────────────────────────────────────────────────

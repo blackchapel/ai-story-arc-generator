@@ -12,9 +12,23 @@ export const TopicPills = memo<TopicPillsProps>(
   ({ filters, activeId, onSelect }) => {
     return (
       <section
-        className="flex-shrink-0 border-b border-[#EBEBEB] py-[6px]"
+        className="flex-shrink-0 border-t border-[#EBEBEB] py-[6px]"
         aria-label="Topic filters"
       >
+        <div className="flex items-center justify-between px-[18px] mt-2 mb-2">
+          <span
+            className="text-[10.5px] font-bold uppercase tracking-[0.09em]"
+            style={{
+              background: "linear-gradient(90deg,#F59E0B 0%,#EF4444 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}
+          >
+            Story Arcs
+          </span>
+        </div>
+
         <div
           className="flex gap-[7px] overflow-x-auto px-[18px] py-[6px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="list"

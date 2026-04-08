@@ -1,6 +1,5 @@
 import { memo, useEffect, useState, useCallback, useRef } from "react";
 import { useJobPoller } from "@/hooks/useJobPoller";
-import { useKeyboardOffset } from "@/hooks/useKeyboardOffset";
 import { notifyArc } from "@/apis";
 import type { JobStatus } from "@/types/job";
 
@@ -256,42 +255,29 @@ interface ProcessingScreenProps {
 export const ProcessingScreen = memo<ProcessingScreenProps>(
   ({ jobId, onComplete, onError, onBack }) => {
     const { state, stop } = useJobPoller(jobId);
-    const kbOffset = useKeyboardOffset();
     const [gradAngle, setGradAngle] = useState(135);
     const angleRef = useRef(135);
 
-    // ── Notify modal ──────────────────────────────────────────────────────────
+    // ── Notify (single-tap, no modal) ─────────────────────────────────────────
     const STORAGE_KEY = `arc-notified-${jobId}`;
-
-    type ModalState = "closed" | "form" | "submitting" | "confirmed";
-    const [modalState, setModalState] = useState<ModalState>("closed");
-    const [email, setEmail] = useState("");
-    const [notifyError, setNotifyError] = useState<string | null>(null);
-    // Persisted email — set on successful submission and restored on mount
-    const [notifiedEmail, setNotifiedEmail] = useState<string | null>(
-      () => localStorage.getItem(STORAGE_KEY),
+    type NotifyState = "idle" | "loading" | "done" | "error";
+    const [notifyState, setNotifyState] = useState<NotifyState>(() =>
+      localStorage.getItem(STORAGE_KEY) ? "done" : "idle",
     );
 
-    const openModal = useCallback(() => {
-      setModalState("form");
-      setNotifyError(null);
-    }, []);
-    const closeModal = useCallback(() => setModalState("closed"), []);
-
-    const handleNotifySubmit = useCallback(async () => {
-      if (!email.trim()) return;
-      setNotifyError(null);
-      setModalState("submitting");
+    const handleNotify = useCallback(async () => {
+      if (notifyState !== "idle" && notifyState !== "error") return;
+      setNotifyState("loading");
       try {
-        await notifyArc(jobId, email.trim());
-        localStorage.setItem(STORAGE_KEY, email.trim());
-        setNotifiedEmail(email.trim());
-        setModalState("confirmed");
+        await notifyArc(jobId);
+        localStorage.setItem(STORAGE_KEY, "1");
+        setNotifyState("done");
       } catch {
-        setNotifyError("Something went wrong. Please try again.");
-        setModalState("form");
+        setNotifyState("error");
+        // Reset after 2 s so user can retry
+        setTimeout(() => setNotifyState("idle"), 2000);
       }
-    }, [jobId, email, STORAGE_KEY]);
+    }, [jobId, notifyState, STORAGE_KEY]);
 
     // Rotating gradient + live theme-color sync
     useEffect(() => {
@@ -371,20 +357,33 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
             aria-hidden="true"
           />
 
-          <div className="relative">
-            <div className="mb-2 flex items-center justify-between">
+          <button
+            onClick={onBack}
+            className=" flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#8C8C8C] transition-colors active:bg-black/[0.12]"
+            aria-label="Go back"
+          >
+            <svg
+              width="8"
+              height="13"
+              viewBox="0 0 8 13"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M7 1.5L1.5 6.5L7 11.5"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+
+          <div className="relative mt-8 ml-6 mb-2">
+            <div className="mb-2 flex items-center">
               <p className="select-none font-logo text-[26px] font-black leading-none tracking-[-1.5px] text-[#0C0C0C]">
                 arc<span style={{ color: "#F5A623" }}>.</span>
               </p>
-              <button
-                onClick={onBack}
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#8C8C8C] transition-colors active:bg-black/[0.12]"
-                aria-label="Close"
-              >
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
-                  <path d="M1 1l9 9M10 1l-9 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
             </div>
             <h1 className="text-[22px] font-bold leading-tight text-[#0C0C0C]">
               Building your arc
@@ -395,7 +394,7 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6">
+        <div className="ml-6 flex-1 overflow-y-auto px-6">
           {STEPS.map((meta, i) => (
             <StepRow
               key={meta.status}
@@ -413,26 +412,107 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           style={{ borderTop: "1px solid #F5F5F5" }}
         >
           <button
-            onClick={notifiedEmail ? undefined : openModal}
-            disabled={!!notifiedEmail}
-            className={`mb-3 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-[11px] text-[13px] font-semibold transition-colors ${
-              notifiedEmail
+            onClick={handleNotify}
+            disabled={notifyState !== "idle"}
+            className={`mb-3 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-[11px] text-[13px] font-semibold transition-all ${
+              notifyState === "done"
                 ? "cursor-default border-[#E8F5F0] bg-[rgba(16,185,129,0.07)] text-[#10B981]"
-                : "cursor-pointer border-[#EBEBEB] bg-[#F5F5F5] text-[#0C0C0C] active:bg-[#EDEDED]"
+                : notifyState === "error"
+                  ? "cursor-default border-[#FEE2E2] bg-[rgba(239,68,68,0.06)] text-[#EF4444]"
+                  : notifyState === "loading"
+                    ? "cursor-default border-[#EBEBEB] bg-[#F5F5F5] text-[#8C8C8C]"
+                    : "cursor-pointer border-[#EBEBEB] bg-[#F5F5F5] text-[#0C0C0C] active:bg-[#EDEDED]"
             }`}
+            aria-live="polite"
           >
-            {notifiedEmail ? (
+            {notifyState === "done" && (
               <>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M2 7l4 4 6-6" stroke="#10B981" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2 7l4 4 6-6"
+                    stroke="#10B981"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
-                You're on the list
+                You will receive an email when ready!
               </>
-            ) : (
+            )}
+            {notifyState === "error" && (
               <>
-                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-                  <path d="M7.5 1a6.5 6.5 0 1 1 0 13A6.5 6.5 0 0 1 7.5 1Z" stroke="#6366F1" strokeWidth="1.3" />
-                  <path d="M7.5 4.5v4l2.5 1.5" stroke="#6366F1" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 3v4M7 9.5v.5"
+                    stroke="#EF4444"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Failed — tap to retry
+              </>
+            )}
+            {notifyState === "loading" && (
+              <>
+                <svg
+                  className="animate-spin"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="7"
+                    cy="7"
+                    r="5.5"
+                    stroke="#ABABAB"
+                    strokeWidth="2"
+                    strokeOpacity="0.3"
+                  />
+                  <path
+                    d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5"
+                    stroke="#8C8C8C"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Setting up notification…
+              </>
+            )}
+            {notifyState === "idle" && (
+              <>
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 15 15"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7.5 1a6.5 6.5 0 1 1 0 13A6.5 6.5 0 0 1 7.5 1Z"
+                    stroke="#6366F1"
+                    strokeWidth="1.3"
+                  />
+                  <path
+                    d="M7.5 4.5v4l2.5 1.5"
+                    stroke="#6366F1"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
                 Notify me when it's ready
               </>
@@ -442,165 +522,6 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
             You can close this tab — we'll keep it warm.
           </p>
         </div>
-
-        {/* Notify modal — bottom sheet */}
-        {modalState !== "closed" && (
-          <>
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              style={{ animation: "fadeIn 0.2s ease both" }}
-              onClick={closeModal}
-              aria-hidden="true"
-            />
-
-            {/* Sheet */}
-            <div
-              className="fixed left-0 right-0 z-50 rounded-t-2xl bg-white px-6 pt-5"
-              style={{
-                bottom: kbOffset,
-                animation: "sheetUp 0.32s cubic-bezier(0.34,1.06,0.64,1) both",
-                paddingBottom:
-                  kbOffset > 0
-                    ? "24px"
-                    : "calc(40px + env(safe-area-inset-bottom, 0px))",
-                transition:
-                  "bottom 0.28s cubic-bezier(0.4,0,0.2,1), padding-bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
-              }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Notify me"
-            >
-              {/* Header */}
-              <div className="mb-5 flex items-center justify-between">
-                <span className="text-[16px] font-bold text-[#0C0C0C]">
-                  {modalState === "confirmed"
-                    ? "You're on the list"
-                    : "Notify me when ready"}
-                </span>
-                <button
-                  onClick={closeModal}
-                  className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-none bg-[#F5F5F5] text-[#8C8C8C] transition-colors active:bg-[#EDEDED]"
-                  aria-label="Close"
-                >
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 10 10"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M1 1l8 8M9 1l-8 8"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              {modalState === "confirmed" ? (
-                /* ── Confirmed state ── */
-                <div style={{ animation: "fadeIn 0.25s ease both" }}>
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(16,185,129,0.1)]">
-                    <svg
-                      width="22"
-                      height="22"
-                      viewBox="0 0 22 22"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M4 11.5l5 5 9-9"
-                        stroke="#10B981"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                  <p className="mb-1 text-[14px] font-semibold text-[#0C0C0C]">
-                    We'll email you at
-                  </p>
-                  <p className="mb-3 text-[14px] font-bold text-[#6366F1]">
-                    {notifiedEmail}
-                  </p>
-                  <p className="text-[13px] leading-relaxed text-[#8C8C8C]">
-                    As soon as your arc is done generating, you'll get a link
-                    straight to it. Feel free to close this tab in the meantime.
-                  </p>
-                </div>
-              ) : (
-                /* ── Form state ── */
-                <>
-                  <p className="mb-4 text-[13px] leading-relaxed text-[#8C8C8C]">
-                    Arc generation usually takes a few minutes. Drop your email
-                    and we'll send you a direct link the moment it's ready.
-                  </p>
-
-                  <label className="mb-1 block text-[11.5px] font-semibold uppercase tracking-wide text-[#8C8C8C]">
-                    Your email
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleNotifySubmit()}
-                    placeholder="you@example.com"
-                    className="mb-2 w-full rounded-xl border border-[#EBEBEB] bg-[#F9F9F9] px-4 py-[11px] text-[14px] text-[#0C0C0C] outline-none transition-colors focus:border-[#6366F1] focus:bg-white"
-                  />
-
-                  {notifyError && (
-                    <p className="mb-2 text-[12px] text-red-500">
-                      {notifyError}
-                    </p>
-                  )}
-
-                  <button
-                    onClick={handleNotifySubmit}
-                    disabled={modalState === "submitting" || !email.trim()}
-                    className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border-none px-4 py-[13px] text-[14px] font-bold text-white transition-opacity disabled:opacity-50"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
-                    }}
-                  >
-                    {modalState === "submitting" ? (
-                      <>
-                        <svg
-                          className="animate-spin"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 14 14"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <circle
-                            cx="7"
-                            cy="7"
-                            r="5.5"
-                            stroke="rgba(255,255,255,0.35)"
-                            strokeWidth="2"
-                          />
-                          <path
-                            d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5"
-                            stroke="white"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        Submitting…
-                      </>
-                    ) : (
-                      "Notify"
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
-          </>
-        )}
 
         <style>{`
           @keyframes tickPop {
@@ -622,10 +543,6 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
           @keyframes pageFadeIn {
             from { opacity: 0; transform: translateY(24px); }
             to   { opacity: 1; transform: translateY(0);    }
-          }
-          @keyframes sheetUp {
-            from { transform: translateY(100%); }
-            to   { transform: translateY(0);    }
           }
         `}</style>
       </div>

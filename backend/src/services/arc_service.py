@@ -96,7 +96,6 @@ def generate_arc_data(articles: list[dict], job_id: str, topic: str) -> ArcModel
 
 
 def validate_and_fix_arc(analysis: ArcModel) -> ArcModel:
-    """Fill any empty sections with placeholder data to prevent blank renders."""
     from src.models.arc_model import Quote, Lens, Blindspot, Takeaway, SentimentPoint
 
     fixed = []
@@ -172,13 +171,10 @@ def assemble_arc(analysis: ArcModel) -> str:
 
 
 def upload_arc_assets(job_id: str, html: str, thumbnail_b64: str) -> tuple[str, str]:
-    """Upload the arc HTML and thumbnail image to GCS. Returns (html_url, img_url)."""
     print("[*] Uploading to GCS")
-
     html_url = upload_text(html, f"arcs/{job_id}/arc.html")
     print(f"  [✓] HTML → {html_url}")
 
-    # thumbnail_b64 is a data URI: "data:image/jpeg;base64,<data>"
     b64_data = thumbnail_b64.split(",", 1)[1] if "," in thumbnail_b64 else thumbnail_b64
     img_bytes = base64.b64decode(b64_data)
     img_url = upload_bytes(img_bytes, f"arcs/{job_id}/thumbnail.jpg", "image/jpeg")
@@ -214,11 +210,13 @@ def _save_arc_to_db(
     tag: str,
     tag_text_color: str,
     html: str,
+    user_id: str,
 ) -> None:
     db = SessionLocal()
     try:
         db.add(OutputSchema(
-            id=uuid.UUID(job_id),
+            id=str(uuid.UUID(job_id)),
+            user_id=user_id,
             title=title,
             description=description,
             img=img,
@@ -264,13 +262,14 @@ def run_pipeline(
     topic: str,
     job_id: str,
     on_status: Callable[[str], None] | None = None,
+    user_id: str = "",
 ) -> None:
     start = time.time()
     Path(f"output/{job_id}").mkdir(parents=True, exist_ok=True)
 
-    def emit(status: str) -> None:
+    def emit(s: str) -> None:
         if on_status:
-            on_status(status)
+            on_status(s)
 
     try:
         emit("FETCHING_ARTICLES")
@@ -295,6 +294,7 @@ def run_pipeline(
             analysis.topic.eyebrow.split(".")[0].strip(),
             analysis.theme.accent,
             html_url,
+            user_id=user_id,
         )
 
         emit("COMPLETED")

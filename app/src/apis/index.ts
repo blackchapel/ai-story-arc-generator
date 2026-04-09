@@ -2,7 +2,7 @@ import type { NewsArticle, User, ActiveJob } from "@/types";
 import type { SubmitJobResponse, StatusResponse } from "@/types/job";
 import { tokenStore, triggerForceLogout } from "@/utils/tokenStore";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
+const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
 // ── Error class ───────────────────────────────────────────────────────────────
 
@@ -25,12 +25,14 @@ interface TokenResponse {
 // ── Refresh queue ─────────────────────────────────────────────────────────────
 
 let _isRefreshing = false;
-type QItem = { resolve: (t: string) => void; reject: (e: unknown) => void };
+// Each queued request resolves with the new access token so it can retry itself
+type QItem = { resolve: (token: string) => void; reject: (e: unknown) => void };
 let _queue: QItem[] = [];
 
-function _flushQueue(token: string | null, err: unknown = null) {
-  _queue.forEach((item) => (token ? item.resolve(token) : item.reject(err)));
+function _flushQueue(token: string | null, err: unknown = null): void {
+  const q = _queue;
   _queue = [];
+  q.forEach((item) => (token ? item.resolve(token) : item.reject(err)));
 }
 
 // ── Core fetch ────────────────────────────────────────────────────────────────
@@ -180,4 +182,12 @@ export function notifyArc(jobId: string): Promise<{ message: string }> {
 
 export function fetchActiveJobs(): Promise<ActiveJob[]> {
   return apiFetch<ActiveJob[]>("/api/arc/jobs/active");
+}
+
+export function regenerateArc(arcId: string): Promise<{ job_id: string }> {
+  return apiFetch<{ job_id: string }>(`/api/arc/${arcId}/regenerate`, { method: "POST" });
+}
+
+export function deleteArc(arcId: string): Promise<void> {
+  return apiFetch<void>(`/api/arc/${arcId}`, { method: "DELETE" });
 }

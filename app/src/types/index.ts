@@ -1,3 +1,5 @@
+import type { JobStatus } from "@/types/job";
+
 // ─── User ─────────────────────────────────────────────────────────────────────
 
 export interface User {
@@ -49,7 +51,7 @@ export interface NewsArticle {
 export interface ActiveJob {
   job_id: string;
   prompt: string;
-  status: string;
+  status: JobStatus;
   created_at: string;
 }
 

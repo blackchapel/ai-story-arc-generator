@@ -1,5 +1,6 @@
 import { memo, useState, useEffect, useRef } from "react";
 import type { ActiveJob } from "@/types";
+import type { JobStatus } from "@/types/job";
 
 interface InProgressSectionProps {
   jobs: ActiveJob[];
@@ -10,14 +11,14 @@ type DisplayJob = ActiveJob & { isExiting: boolean; isNew: boolean };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL: Partial<Record<JobStatus, string>> = {
   FETCHING_ARTICLES: "Fetching articles",
   ANALYZING_DATA:    "Analyzing data",
   GENERATING_IMAGES: "Generating images",
   ASSEMBLING:        "Assembling arc",
 };
 
-const STATUS_ORDER = [
+const STATUS_ORDER: JobStatus[] = [
   "FETCHING_ARTICLES",
   "ANALYZING_DATA",
   "GENERATING_IMAGES",
@@ -26,7 +27,7 @@ const STATUS_ORDER = [
 
 // ── StatusDots ────────────────────────────────────────────────────────────────
 
-function StatusDots({ status }: { status: string }) {
+function StatusDots({ status }: { status: JobStatus }) {
   const current = STATUS_ORDER.indexOf(status);
   return (
     <div className="flex items-center gap-1" aria-hidden="true">

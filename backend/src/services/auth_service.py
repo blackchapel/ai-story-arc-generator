@@ -1,6 +1,5 @@
 import hashlib
 import os
-import random
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -106,7 +105,7 @@ def send_otp(email: str, db: Session) -> str:
             detail="Too many OTP requests. Please wait before requesting a new code.",
         )
 
-    code = str(random.randint(0, 999_999)).zfill(6)
+    code = str(secrets.randbelow(1_000_000)).zfill(6)
     otp_hash = _hash_otp(code)
 
     # Delete any previous unused OTPs for this email

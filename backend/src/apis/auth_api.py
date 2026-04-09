@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import defaultdict
 from threading import Lock
@@ -20,6 +21,7 @@ from src.services.auth_service import logout_user, refresh_access_token, send_ot
 from src.services.email_service import send_otp_email
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # ── Rate limiter: 5 requests per IP per 60 s ─────────────────────────────────
 
@@ -34,6 +36,11 @@ def _rate_limit(ip: str) -> None:
     cutoff = now - _WINDOW
     with _lock:
         _store[ip] = [t for t in _store[ip] if t > cutoff]
+        # Remove the key entirely when the window is empty to prevent
+        # unbounded growth of the dict (stale IPs would accumulate forever).
+        if not _store[ip]:
+            del _store[ip]
+            _store[ip]  # re-initialise via defaultdict
         if len(_store[ip]) >= _LIMIT:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -52,7 +59,14 @@ def send_otp_route(
 ) -> dict:
     _rate_limit(request.client.host if request.client else "unknown")
     code = send_otp(body.email, db)
-    send_otp_email(body.email, code)
+    try:
+        send_otp_email(body.email, code)
+    except Exception as exc:
+        logger.error("Failed to send OTP email to %s: %s", body.email, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to send verification email. Please try again.",
+        ) from exc
     return {"message": "OTP sent"}
 
 

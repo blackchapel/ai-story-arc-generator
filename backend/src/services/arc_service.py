@@ -3,6 +3,7 @@ import uuid
 import json
 import time
 import base64
+import logging
 import requests
 import feedparser
 import trafilatura
@@ -15,7 +16,7 @@ from google.genai import types
 from googlenewsdecoder import gnewsdecoder
 from dotenv import load_dotenv
 
-from src.models.arc_model import ArcModel
+from src.models.arc_model import ArcModel, Quote, Lens, Blindspot, Takeaway, SentimentPoint
 from src.prompts import generate_arc_data_prompt
 from src.schemas.output_schema import OutputSchema
 from src.schemas.notification_schema import NotificationSchema
@@ -24,6 +25,8 @@ from src.services.email_service import send_arc_ready_email
 from src.services.gcs_service import upload_bytes, upload_text
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 ARTICLE_LIMIT = 10
 TEXT_MODEL = "publishers/google/models/gemini-2.5-flash"
@@ -37,13 +40,16 @@ REQUEST_HEADERS = {
 
 client = genai.Client(
     vertexai=True,
-    project=str(os.environ.get("GOOGLE_PROJECT_ID")),
+    project=os.environ["GOOGLE_PROJECT_ID"],
     location="us-central1",
 )
 
+# Absolute path to public/index.html — works regardless of cwd at process start.
+_PUBLIC_INDEX = Path(__file__).resolve().parent.parent.parent / "public" / "index.html"
+
 
 def get_raw_news(topic: str, limit: int) -> list[dict]:
-    print(f"[*] Fetching news for: {topic}")
+    logger.info("Fetching news for: %s", topic)
     encoded = topic.replace(" ", "+")
     feed = feedparser.parse(
         f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
@@ -62,11 +68,11 @@ def get_raw_news(topic: str, limit: int) -> list[dict]:
                 pub_date = getattr(entry, "published", "") or getattr(entry, "updated", "")
                 articles.append({
                     "title": entry.title,
-                    "source": entry.source.get("title", "Unknown"),
+                    "source": (entry.get("source") or {}).get("title", "Unknown"),
                     "published": pub_date,
                     "full_text": content[:5000],
                 })
-                print(f"  [✓] {entry.title[:60]}")
+                logger.info("  Fetched: %s", entry.title[:60])
         except Exception:
             continue
 
@@ -74,7 +80,7 @@ def get_raw_news(topic: str, limit: int) -> list[dict]:
 
 
 def generate_arc_data(articles: list[dict], job_id: str, topic: str) -> ArcModel:
-    print("[*] Analyzing arc")
+    logger.info("Analyzing arc for job %s", job_id)
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
     date_context = f"TODAY'S DATE: {today}. Prioritise articles closest to today.\n\n"
     user_input = date_context + generate_arc_data_prompt.user_prompt + json.dumps(articles) + topic
@@ -88,16 +94,10 @@ def generate_arc_data(articles: list[dict], job_id: str, topic: str) -> ArcModel
         ),
     )
 
-    Path(f"output/{job_id}").mkdir(parents=True, exist_ok=True)
-    with open(f"output/{job_id}/news.json", "w", encoding="utf-8") as f:
-        json.dump(response.parsed.model_dump(), f, indent=2, ensure_ascii=False)
-
     return response.parsed
 
 
 def validate_and_fix_arc(analysis: ArcModel) -> ArcModel:
-    from src.models.arc_model import Quote, Lens, Blindspot, Takeaway, SentimentPoint
-
     fixed = []
 
     if not analysis.quotes:
@@ -136,13 +136,13 @@ def validate_and_fix_arc(analysis: ArcModel) -> ArcModel:
         analysis.timeline = [SentimentPoint(period="Now", score=0.0, eventLabel="Story ongoing")]
 
     if fixed:
-        print(f"[⚠] Placeholder data added for: {', '.join(fixed)}")
+        logger.warning("Placeholder data added for: %s", ", ".join(fixed))
 
     return analysis
 
 
 def generate_panel_images(analysis: ArcModel) -> None:
-    print("[*] Generating panel images")
+    logger.info("Generating panel images")
     for i, panel in enumerate(analysis.panels, start=1):
         prompt = (
             "STYLE: Noir comic book art, heavy ink, high contrast, stylized illustration. "
@@ -158,27 +158,27 @@ def generate_panel_images(analysis: ArcModel) -> None:
             if response.generated_images:
                 img_bytes = response.generated_images[0].image.image_bytes
                 panel.image = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
-                print(f"  [✓] Panel {i}")
+                logger.info("  Panel %d generated", i)
         except Exception as exc:
-            print(f"  [✗] Panel {i} failed: {exc}")
+            logger.error("  Panel %d failed: %s", i, exc)
 
 
 def assemble_arc(analysis: ArcModel) -> str:
-    print("[*] Assembling HTML")
-    with open("public/index.html", "r", encoding="utf-8") as f:
+    logger.info("Assembling HTML")
+    with open(_PUBLIC_INDEX, "r", encoding="utf-8") as f:
         html = f.read()
     return html.replace("{{ARC_DATA}}", json.dumps(analysis.model_dump(), ensure_ascii=True))
 
 
 def upload_arc_assets(job_id: str, html: str, thumbnail_b64: str) -> tuple[str, str]:
-    print("[*] Uploading to GCS")
+    logger.info("Uploading to GCS")
     html_url = upload_text(html, f"arcs/{job_id}/arc.html")
-    print(f"  [✓] HTML → {html_url}")
+    logger.info("  HTML uploaded: %s", html_url)
 
     b64_data = thumbnail_b64.split(",", 1)[1] if "," in thumbnail_b64 else thumbnail_b64
     img_bytes = base64.b64decode(b64_data)
     img_url = upload_bytes(img_bytes, f"arcs/{job_id}/thumbnail.jpg", "image/jpeg")
-    print(f"  [✓] Thumbnail → {img_url}")
+    logger.info("  Thumbnail uploaded: %s", img_url)
 
     return html_url, img_url
 
@@ -249,11 +249,11 @@ def _dispatch_notifications(job_id: str) -> None:
                 send_arc_ready_email(n.email, job_id)
                 n.sent_at = datetime.now(timezone.utc)
             except Exception as exc:
-                print(f"[✗] Notification failed for {n.email}: {exc}")
+                logger.error("Notification failed for %s: %s", n.email, exc)
         db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[✗] Notification dispatch error for {job_id}: {exc}")
+        logger.error("Notification dispatch error for job %s: %s", job_id, exc)
     finally:
         db.close()
 
@@ -265,7 +265,6 @@ def run_pipeline(
     user_id: str = "",
 ) -> None:
     start = time.time()
-    Path(f"output/{job_id}").mkdir(parents=True, exist_ok=True)
 
     def emit(s: str) -> None:
         if on_status:
@@ -299,10 +298,11 @@ def run_pipeline(
 
         emit("COMPLETED")
         _dispatch_notifications(job_id)
-        print(f"[✓] Pipeline complete in {round(time.time() - start, 1)}s")
+        logger.info("Pipeline complete in %.1fs", time.time() - start)
 
     except Exception:
         emit("FAILED")
+        logger.exception("Pipeline FAILED for job %s", job_id)
         raise
 
 

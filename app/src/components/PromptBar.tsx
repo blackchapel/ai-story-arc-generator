@@ -215,9 +215,7 @@ export const PromptBar = memo<PromptBarProps>(
             onFocus={handleFocus}
             onBlur={handleBlur}
             onKeyDown={handleKey}
-            placeholder={
-              user ? "Ask arc anything…" : "Sign in to generate arcs…"
-            }
+            placeholder={user ? "Ask arc anything…" : "Login to generate arcs…"}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="sentences"

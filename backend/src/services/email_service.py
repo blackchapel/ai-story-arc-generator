@@ -1,23 +1,42 @@
 import os
+import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
+logger = logging.getLogger(__name__)
+
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 
+_GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
+_GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
+if not _GMAIL_ADDRESS or not _GMAIL_APP_PASSWORD:
+    raise RuntimeError(
+        "GMAIL_ADDRESS and GMAIL_APP_PASSWORD environment variables must be set"
+    )
+
+_APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+if not _APP_BASE_URL:
+    logger.warning("APP_BASE_URL not set, arc links will be relative")
+
+
+def _send_email(to_email: str, msg: MIMEMultipart) -> None:
+    """Open an SMTP connection and deliver *msg* to *to_email*."""
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(_GMAIL_ADDRESS, _GMAIL_APP_PASSWORD)
+        server.sendmail(_GMAIL_ADDRESS, to_email, msg.as_string())
+
 
 def send_arc_ready_email(to_email: str, job_id: str) -> None:
-    gmail_address  = os.environ["GMAIL_ADDRESS"]
-    gmail_app_password = os.environ["GMAIL_APP_PASSWORD"]
-    app_base_url   = os.environ.get("APP_BASE_URL", "").rstrip("/")
-
-    arc_url = f"{app_base_url}/arc/{job_id}"
+    arc_url = f"{_APP_BASE_URL}/arc/{job_id}"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Your arc is ready"
-    msg["From"]    = f"arc. <{gmail_address}>"
+    msg["From"]    = f"arc. <{_GMAIL_ADDRESS}>"
     msg["To"]      = to_email
 
     text_body = f"Your story arc is ready. Open it here: {arc_url}"
@@ -95,22 +114,14 @@ def send_arc_ready_email(to_email: str, job_id: str) -> None:
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(gmail_address, gmail_app_password)
-        server.sendmail(gmail_address, to_email, msg.as_string())
-
-    print(f"[✓] Notification email sent to {to_email} for arc {job_id}")
+    _send_email(to_email, msg)
+    logger.info("Notification email sent to %s for arc %s", to_email, job_id)
 
 
 def send_otp_email(to_email: str, code: str) -> None:
-    gmail_address      = os.environ["GMAIL_ADDRESS"]
-    gmail_app_password = os.environ["GMAIL_APP_PASSWORD"]
-
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Your arc. sign-in code"
-    msg["From"]    = f"arc. <{gmail_address}>"
+    msg["From"]    = f"arc. <{_GMAIL_ADDRESS}>"
     msg["To"]      = to_email
 
     text_body = f"Your arc. sign-in code is: {code}\n\nThis code expires in 10 minutes. Do not share it with anyone."
@@ -147,7 +158,7 @@ def send_otp_email(to_email: str, code: str) -> None:
                   Your sign-in code
                 </p>
                 <p style="margin:0;font-size:14px;color:#8C8C8C;line-height:1.55;">
-                  Use the code below to sign in to arc.<br>
+                  Use the code below to login to arc.<br>
                   It expires in <strong>10 minutes</strong>.
                 </p>
               </td>
@@ -188,10 +199,5 @@ def send_otp_email(to_email: str, code: str) -> None:
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(gmail_address, gmail_app_password)
-        server.sendmail(gmail_address, to_email, msg.as_string())
-
-    print(f"[✓] OTP email sent to {to_email}")
+    _send_email(to_email, msg)
+    logger.info("OTP email sent to %s", to_email)

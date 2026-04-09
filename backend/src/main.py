@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -17,11 +18,18 @@ from src.schemas.job_schema import JobSchema              # noqa: F401
 from src.apis.arc_api import router as arc_router
 from src.apis.auth_api import router as auth_router
 
-Base.metadata.create_all(bind=engine)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Ensure all tables exist before anything else runs.
+    Base.metadata.create_all(bind=engine)
+
     # Mark any jobs that were still processing when the server last stopped as FAILED.
     # Their background tasks died with the process and can never complete.
     db = SessionLocal()
@@ -35,10 +43,10 @@ async def lifespan(_: FastAPI):
             job.status = "FAILED"
         if orphaned:
             db.commit()
-            print(f"[startup] Marked {len(orphaned)} orphaned job(s) as FAILED")
+            logger.info("Marked %d orphaned job(s) as FAILED", len(orphaned))
     except Exception as exc:
         db.rollback()
-        print(f"[startup] Failed to clean up orphaned jobs: {exc}")
+        logger.error("Failed to clean up orphaned jobs: %s", exc)
     finally:
         db.close()
     yield
@@ -48,10 +56,11 @@ app = FastAPI(title="Arc API", lifespan=lifespan)
 
 _allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 
+_wildcard = _allowed_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=_allowed_origins != ["*"],
+    allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )

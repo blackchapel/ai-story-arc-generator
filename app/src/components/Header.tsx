@@ -12,14 +12,16 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = useCallback(() => {
-    if (!user) { onProfileClick(); return; }
     setDropdownOpen((p) => !p);
-  }, [user, onProfileClick]);
+  }, []);
 
   useEffect(() => {
     if (!dropdownOpen) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setDropdownOpen(false);
       }
     };
@@ -42,7 +44,10 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
     >
       <div
         className="absolute bottom-0 left-0 right-0 h-[2px] opacity-70"
-        style={{ background: "linear-gradient(90deg, #6366F1 0%, #EC4899 30%, #F5A623 55%, #10B981 80%, #0EA5E9 100%)" }}
+        style={{
+          background:
+            "linear-gradient(90deg, #6366F1 0%, #EC4899 30%, #F5A623 55%, #10B981 80%, #0EA5E9 100%)",
+        }}
         aria-hidden="true"
       />
 
@@ -66,41 +71,66 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
       </span>
 
       <div className="relative" ref={dropdownRef}>
-        <button
-          onClick={toggleDropdown}
-          className="flex h-[34px] w-[34px] flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-opacity active:opacity-70"
-          style={user
-            ? { background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)" }
-            : { border: "2px solid transparent", background: "linear-gradient(white,white) padding-box, linear-gradient(135deg,#F5A623 0%,#EC4899 100%) border-box" }}
-          aria-label={user ? `${displayName} — profile` : "Sign in"}
-          aria-expanded={dropdownOpen}
-        >
-          {user ? (
+        {user ? (
+          <button
+            onClick={toggleDropdown}
+            className="flex h-[34px] w-[34px] flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-opacity active:opacity-70"
+            style={{
+              background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
+            }}
+            aria-label={`${displayName} — profile`}
+            aria-expanded={dropdownOpen}
+          >
             <span className="text-[14px] font-bold text-white">{initial}</span>
-          ) : (
-            <svg width="18" height="19" viewBox="0 0 18 19" fill="none" aria-hidden="true">
-              <circle cx="9" cy="6.5" r="3.75" fill="#ABABAB"/>
-              <path d="M1.5 18c0-4.142 3.358-7.5 7.5-7.5s7.5 3.358 7.5 7.5" stroke="#ABABAB" strokeWidth="1.8" strokeLinecap="round"/>
-            </svg>
-          )}
-        </button>
+          </button>
+        ) : (
+          <button
+            onClick={onProfileClick}
+            className="flex h-[30px] cursor-pointer items-center gap-1.5 rounded-full border-none px-3 text-[12px] font-bold text-white transition-opacity active:opacity-80"
+            style={{
+              background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
+              boxShadow: "0 2px 10px rgba(99,102,241,0.32)",
+            }}
+            aria-label="Login"
+          >
+            Login
+          </button>
+        )}
 
         {dropdownOpen && user && (
           <div
             className="absolute right-0 top-full z-50 mt-2 w-[192px] overflow-hidden rounded-xl border border-[#EBEBEB] bg-white shadow-xl"
-            style={{ animation: "dropIn 0.18s cubic-bezier(0.34,1.56,0.64,1) both" }}
+            style={{
+              animation: "dropIn 0.18s cubic-bezier(0.34,1.56,0.64,1) both",
+            }}
           >
             <div className="px-4 py-3">
-              <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#ABABAB]">Signed in as</p>
-              <p className="mt-[2px] truncate text-[13px] font-bold text-[#6366F1]">{user.email}</p>
+              <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#ABABAB]">
+                Signed in as
+              </p>
+              <p className="mt-[2px] truncate text-[13px] font-bold text-[#6366F1]">
+                {user.email}
+              </p>
             </div>
             <div className="border-t border-[#F5F5F5]" />
             <button
               onClick={handleLogout}
               className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-4 py-[11px] text-left text-[13px] font-semibold text-[#EF4444] transition-colors active:bg-[#FFF5F5]"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path d="M5 13H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h3M9.5 10.5 13 7l-3.5-3.5M5 7h8" stroke="#EF4444" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M5 13H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h3M9.5 10.5 13 7l-3.5-3.5M5 7h8"
+                  stroke="#EF4444"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               Sign out
             </button>

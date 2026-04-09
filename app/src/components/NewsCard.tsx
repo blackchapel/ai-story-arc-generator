@@ -53,8 +53,7 @@ export const NewsCard = memo<NewsCardProps>(
       <article
         onClick={handleClick}
         tabIndex={0}
-        role="button"
-        onKeyDown={(e) => e.key === "Enter" && handleClick()}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleClick()}
         aria-label={`Read: ${article.title}`}
         className="relative flex items-center cursor-pointer gap-3 border-b border-[#EBEBEB] px-[18px] py-[14px] last:border-b-0 active:bg-[#F5F5F5]"
         style={{

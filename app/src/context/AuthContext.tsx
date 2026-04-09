@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { sendOtp, verifyOtp, logoutUser, fetchMe } from "@/apis";
@@ -33,9 +33,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  // Register once — forceLogout is stable (empty-dep useCallback)
   useEffect(() => {
     registerForceLogout(forceLogout);
-  }, [forceLogout]);
+  }, [forceLogout]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSendOtp = useCallback(async (email: string): Promise<void> => {
     await sendOtp(email);
@@ -56,8 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const value = useMemo(
+    () => ({ user, isLoading, sendOtp: handleSendOtp, verifyOtp: handleVerifyOtp, logout, forceLogout }),
+    [user, isLoading, handleSendOtp, handleVerifyOtp, logout, forceLogout],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, sendOtp: handleSendOtp, verifyOtp: handleVerifyOtp, logout, forceLogout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

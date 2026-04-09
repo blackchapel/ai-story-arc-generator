@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import secrets
 import threading
 import uuid
@@ -19,14 +20,19 @@ from src.schemas.saved_arc_schema import SavedArcSchema
 from src.schemas.job_schema import JobSchema
 from src.services.arc_service import run_pipeline
 from src.services.email_service import send_arc_ready_email
+from src.services.gcs_service import delete_blob
 from src.models.arc_request_model import ArcRequestModel
 from src.models.notification_model import NotifyRequestModel
 from src.models.output_model import OutputModel, OutputSummaryModel
 from src.models.job_model import ActiveJobModel
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # ── SSE state ─────────────────────────────────────────────────────────────────
+# NOTE: Both dicts are process-local — they are NOT shared between replicas.
+# In a multi-replica deployment, SSE streaming and in-memory status only work
+# correctly when the client is routed to the same replica that owns the job.
 
 jobs: dict[str, dict] = {}
 _subscribers: dict[str, list[asyncio.Queue]] = {}
@@ -54,7 +60,7 @@ def _update_job_status(job_id: str, status: str) -> None:
             db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[✗] Failed to update job status in DB: {exc}")
+        logger.error("Failed to update job status in DB: %s", exc)
     finally:
         db.close()
 
@@ -186,7 +192,7 @@ async def start_generation(
     db.add(JobSchema(id=job_id, user_id=current_user.id, prompt=request.prompt, status="FETCHING_ARTICLES"))
     db.commit()
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     background_tasks.add_task(_run_pipeline_bg, job_id, request.prompt, loop, current_user.id)
     return {"job_id": job_id, "status": "FETCHING_ARTICLES"}
 
@@ -305,6 +311,61 @@ async def toggle_share(
         arc.share_token = token
         db.commit()
         return {"is_shared": True, "share_token": token}
+
+
+@router.post("/{arc_id}/regenerate", status_code=status.HTTP_202_ACCEPTED)
+async def regenerate_arc(
+    arc_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[UserSchema, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    arc = db.query(OutputSchema).filter(OutputSchema.id == arc_id).first()
+    if not arc:
+        raise HTTPException(status_code=404, detail="Arc not found")
+    if arc.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Original prompt is stored in the job whose id == arc_id
+    original_job = db.query(JobSchema).filter(JobSchema.id == arc_id).first()
+    if not original_job or not original_job.prompt:
+        raise HTTPException(status_code=422, detail="Original prompt not found — cannot regenerate")
+
+    new_job_id = str(uuid.uuid4())
+    jobs[new_job_id] = {"status": "FETCHING_ARTICLES"}
+    db.add(JobSchema(id=new_job_id, user_id=current_user.id, prompt=original_job.prompt, status="FETCHING_ARTICLES"))
+    db.commit()
+
+    loop = asyncio.get_running_loop()
+    background_tasks.add_task(_run_pipeline_bg, new_job_id, original_job.prompt, loop, current_user.id)
+    return {"job_id": new_job_id, "status": "FETCHING_ARTICLES"}
+
+
+@router.delete("/{arc_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_arc(
+    arc_id: str,
+    current_user: Annotated[UserSchema, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    arc = db.query(OutputSchema).filter(OutputSchema.id == arc_id).first()
+    if not arc:
+        raise HTTPException(status_code=404, detail="Arc not found")
+    if arc.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Best-effort GCS cleanup — derive the blob path from the public URL
+    if arc.html and arc.html.startswith("https://storage.googleapis.com/"):
+        # URL format: https://storage.googleapis.com/{bucket}/{path}
+        parts = arc.html.split("/", 4)
+        if len(parts) == 5:
+            delete_blob(parts[4])
+
+    # Delete associated notifications (no FK cascade on this table)
+    db.query(NotificationSchema).filter(NotificationSchema.job_id == arc_id).delete()
+
+    # saved_arcs cascade via FK; delete the output row last
+    db.delete(arc)
+    db.commit()
 
 
 @router.post("/notify")

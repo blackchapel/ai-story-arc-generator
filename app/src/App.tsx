@@ -89,9 +89,17 @@ function AppInner() {
   );
 
   // ── Navigation ────────────────────────────────────────────────────────────
+
+  // Ref so navigate() never changes identity (avoids cascading dep invalidations)
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
   const navigate = useCallback(
     (nextView: AppView, url: string, replace = false) => {
-      replace
+      // Push when going FROM home to a screen  → creates [home, screen]
+      // Replace when already on a non-home screen → keeps [home, screen], no accumulation
+      const shouldReplace = replace || viewRef.current.screen !== "home";
+      shouldReplace
         ? history.replaceState(nextView, "", url)
         : history.pushState(nextView, "", url);
       setView(nextView);
@@ -124,10 +132,16 @@ function AppInner() {
   }, [user]);
 
   const goHome = useCallback(() => {
-    navigate({ screen: "home" }, "/", true);
-    refreshArcs();
-    refreshActiveJobs();
-  }, [navigate, refreshArcs, refreshActiveJobs]);
+    if (viewRef.current.screen !== "home") {
+      // Pop back to the home entry already in the stack.
+      // The popstate handler will call setView + refreshArcs + refreshActiveJobs.
+      history.back();
+    } else {
+      // Already home (e.g. called programmatically after auth) — just refresh.
+      refreshArcs();
+      refreshActiveJobs();
+    }
+  }, [refreshArcs, refreshActiveJobs]);
 
   // ── Deep-link handling on mount ───────────────────────────────────────────
   useEffect(() => {
@@ -303,6 +317,17 @@ function AppInner() {
           jobId={view.jobId}
           htmlUrl={view.htmlUrl}
           onBack={goHome}
+          onRegenerate={(newJobId) =>
+            navigate(
+              { screen: "processing", jobId: newJobId },
+              `/process/${newJobId}`,
+              true,
+            )
+          }
+          onDeleted={() => {
+            refreshArcs();
+            goHome();
+          }}
         />
       )}
 

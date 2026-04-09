@@ -22,3 +22,14 @@ def upload_bytes(data: bytes, path: str, content_type: str) -> str:
 def upload_text(text: str, path: str, content_type: str = "text/html; charset=utf-8") -> str:
     """Upload a UTF-8 string to GCS and return the public URL."""
     return upload_bytes(text.encode("utf-8"), path, content_type)
+
+
+def delete_blob(path: str) -> None:
+    """Delete a blob by its GCS path (not the full URL). Best-effort — silently ignores 404."""
+    if not _BUCKET_NAME:
+        return
+    try:
+        blob = _client().bucket(_BUCKET_NAME).blob(path)
+        blob.delete()
+    except Exception:
+        pass

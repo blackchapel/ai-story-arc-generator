@@ -10,18 +10,8 @@ _app: firebase_admin.App | None = None
 
 def _get_app() -> firebase_admin.App:
     global _app
-    if _app is not None:
-        return _app
-    with _lock:
-        if _app is not None:
-            return _app
-        cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if not cred_path:
-            raise RuntimeError(
-                "Set GOOGLE_APPLICATION_CREDENTIALS"
-            )
-        cred = credentials.Certificate(cred_path)
-        _app = firebase_admin.initialize_app(cred)
+    if _app is None:
+        _app = firebase_admin.initialize_app()
     return _app
 
 

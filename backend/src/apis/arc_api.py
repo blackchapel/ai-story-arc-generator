@@ -19,7 +19,7 @@ from src.schemas.notification_schema import NotificationSchema
 from src.schemas.saved_arc_schema import SavedArcSchema
 from src.schemas.job_schema import JobSchema
 from src.services.arc_service import run_pipeline
-from src.services.email_service import send_arc_ready_email
+from src.services.push_service import send_push_notification
 from src.services.gcs_service import delete_blob
 from src.models.arc_request_model import ArcRequestModel
 from src.models.notification_model import NotifyRequestModel
@@ -373,37 +373,51 @@ async def register_notification(
     request: NotifyRequestModel,
     current_user: Annotated[UserSchema, Depends(get_current_user)],
     db: Session = Depends(get_db),
-):
-    # Verify the job exists and belongs to the current user
+) -> dict:
+    # Verify job exists and belongs to current user
     job_record = db.query(JobSchema).filter(
         JobSchema.id == request.job_id,
         JobSchema.user_id == current_user.id,
     ).first()
     if not job_record:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
-    email = current_user.email
-
-    # Check in-memory status first, fall back to DB record
+    # Check current job status (prefer in-memory over DB for freshness)
     in_memory = jobs.get(request.job_id)
-    status = in_memory["status"] if in_memory else job_record.status
+    current_status: str = in_memory["status"] if in_memory else job_record.status
 
-    if status == "COMPLETED":
+    if current_status == "COMPLETED":
+        # Arc already ready — send immediately
         try:
-            send_arc_ready_email(email, request.job_id)
+            send_push_notification(request.fcm_token, request.job_id)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail="Failed to send email") from exc
-        return {"message": "Arc is already ready — email sent now"}
+            logger.error("Immediate push failed for job %s: %s", request.job_id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to send push notification",
+            ) from exc
+        return {"message": "Arc is already ready — notification sent"}
 
-    if status == "FAILED":
-        raise HTTPException(status_code=410, detail="Job failed — no arc to notify about")
+    if current_status == "FAILED":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Job failed — nothing to notify about",
+        )
 
-    # Upsert: avoid duplicate notifications for same job+user
+    # Upsert: one record per job+user, update token if it changed
     existing = db.query(NotificationSchema).filter(
         NotificationSchema.job_id == request.job_id,
-        NotificationSchema.email == email,
+        NotificationSchema.email == current_user.email,
+        NotificationSchema.sent_at.is_(None),
     ).first()
-    if not existing:
-        db.add(NotificationSchema(job_id=request.job_id, email=email))
-        db.commit()
-    return {"message": "You'll receive an email when your arc is ready"}
+
+    if existing:
+        existing.fcm_token = request.fcm_token  # refresh token in case it rotated
+    else:
+        db.add(NotificationSchema(
+            job_id=request.job_id,
+            email=current_user.email,
+            fcm_token=request.fcm_token,
+        ))
+    db.commit()
+    return {"message": "You'll be notified when your arc is ready"}

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 import {
   Header,
@@ -42,14 +43,16 @@ function resolveView(path: string): AppView {
 // ── Inner app (consumes AuthContext) ──────────────────────────────────────────
 
 function AppInner() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, pendingLinkSignIn } = useAuth();
 
   const [view, setView] = useState<AppView>({ screen: "home" });
   const [menuOpen, setMenuOpen] = useState(false);
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [activeFilter, setFilter] = useState("all");
   const [arcs, setArcs] = useState<NewsArticle[]>([]);
-  const [loadingArcs, setLoadingArcs] = useState(false);
+  // Start true so NewsFeed stays in skeleton state across the auth→arcs handoff,
+  // preventing the one-frame "no arcs yet" flash on reload while logged in.
+  const [loadingArcs, setLoadingArcs] = useState(true);
   const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([]);
 
   const [pendingPrompt, setPending] = useState<string | null>(null);
@@ -57,6 +60,7 @@ function AppInner() {
   const { isBookmarked, toggle: toggleBookmark } = useBookmarks();
   const { toast, showToast, dismissToast } = useToast();
   const kbOffset = useKeyboardOffset();
+  const { onForegroundMessage } = usePushNotifications();
 
   // ── Session expiry detection ──────────────────────────────────────────────
   const prevUserRef = useRef(user);
@@ -106,6 +110,18 @@ function AppInner() {
     },
     [],
   );
+
+  // ── Foreground push notifications ─────────────────────────────────────────
+  useEffect(() => {
+    const unsubscribe = onForegroundMessage((jobId, url) => {
+      showToast("Your arc is ready!");
+      // Navigate to the arc after a brief moment so the toast is visible
+      setTimeout(() => {
+        navigate({ screen: "result", jobId }, url, true);
+      }, 800);
+    });
+    return unsubscribe;
+  }, [onForegroundMessage, navigate, showToast]);
 
   const refreshArcs = useCallback(async () => {
     if (!user) {
@@ -295,11 +311,11 @@ function AppInner() {
         <StoryViewer story={openStory} onClose={() => setOpenStory(null)} />
       )}
 
-      {view.screen === "auth" && (
+      {(view.screen === "auth" || pendingLinkSignIn) && (
         <AuthPage
-          redirectAfter={view.redirectAfter}
+          redirectAfter={view.screen === "auth" ? view.redirectAfter : undefined}
           onSuccess={handleAuthSuccess}
-          onBack={goHome}
+          onBack={pendingLinkSignIn && view.screen !== "auth" ? () => {} : goHome}
         />
       )}
 

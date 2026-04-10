@@ -1,6 +1,7 @@
 import type { NewsArticle, User, ActiveJob } from "@/types";
 import type { SubmitJobResponse, StatusResponse } from "@/types/job";
-import { tokenStore, triggerForceLogout } from "@/utils/tokenStore";
+import { auth } from "@/lib/firebase";
+import { signOut } from "firebase/auth";
 
 const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -16,84 +17,66 @@ export class ApiError extends Error {
   }
 }
 
-interface TokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-}
+// ── Token helpers ─────────────────────────────────────────────────────────────
 
-// ── Refresh queue ─────────────────────────────────────────────────────────────
-
-let _isRefreshing = false;
-// Each queued request resolves with the new access token so it can retry itself
-type QItem = { resolve: (token: string) => void; reject: (e: unknown) => void };
-let _queue: QItem[] = [];
-
-function _flushQueue(token: string | null, err: unknown = null): void {
-  const q = _queue;
-  _queue = [];
-  q.forEach((item) => (token ? item.resolve(token) : item.reject(err)));
+async function getAuthToken(): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
 }
 
 // ── Core fetch ────────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const isAuthPath = path.startsWith("/api/auth/");
   const headers = new Headers(init.headers);
 
-  const accessToken = tokenStore.getAccessToken();
-  if (accessToken && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
-  }
+  const token = await getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
 
-  if (!res.ok) {
-    if (res.status === 401 && !isAuthPath) {
-      const refreshToken = tokenStore.getRefreshToken();
-      if (!refreshToken) {
-        tokenStore.clear();
-        triggerForceLogout();
-        throw new ApiError(401, "Session expired. Please log in again.");
-      }
-
-      if (_isRefreshing) {
-        return new Promise<T>((resolve, reject) => {
-          _queue.push({
-            resolve: (newToken) => {
-              const rh = new Headers(init.headers);
-              rh.set("Authorization", `Bearer ${newToken}`);
-              resolve(apiFetch<T>(path, { ...init, headers: rh }));
-            },
-            reject,
-          });
-        });
-      }
-
-      _isRefreshing = true;
+  if (res.status === 401) {
+    // Try a forced token refresh (Firebase SDK handles expiry internally,
+    // but explicit refresh ensures we have a fresh token after a long idle).
+    const user = auth.currentUser;
+    if (user) {
       try {
-        const rRes = await fetch(`${BASE_URL}/api/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
+        const freshToken = await user.getIdToken(/* forceRefresh */ true);
+        const retryHeaders = new Headers(init.headers);
+        retryHeaders.set("Authorization", `Bearer ${freshToken}`);
+        const retryRes = await fetch(`${BASE_URL}${path}`, {
+          ...init,
+          headers: retryHeaders,
         });
-        if (!rRes.ok) throw new Error("refresh_failed");
-        const data = (await rRes.json()) as TokenResponse;
-        tokenStore.setTokens(data.access_token, data.refresh_token);
-        _flushQueue(data.access_token);
-        _isRefreshing = false;
-        const rh = new Headers(init.headers);
-        rh.set("Authorization", `Bearer ${data.access_token}`);
-        return apiFetch<T>(path, { ...init, headers: rh });
+        if (retryRes.ok) {
+          if (retryRes.status === 204) return undefined as T;
+          return retryRes.json() as Promise<T>;
+        }
+        if (retryRes.status === 401) {
+          await signOut(auth);
+          throw new ApiError(401, "Session expired. Please log in again.");
+        }
+        // Non-401 error from retry — fall through to error parser below
+        const errBody = await retryRes.json().catch(() => null) as { detail?: string } | null;
+        throw new ApiError(
+          retryRes.status,
+          errBody?.detail ?? `HTTP ${retryRes.status}`,
+        );
       } catch (e) {
-        _flushQueue(null, e);
-        _isRefreshing = false;
-        tokenStore.clear();
-        triggerForceLogout();
+        if (e instanceof ApiError) throw e;
+        await signOut(auth);
         throw new ApiError(401, "Session expired. Please log in again.");
       }
     }
+    await signOut(auth);
+    throw new ApiError(401, "Session expired. Please log in again.");
+  }
 
+  if (!res.ok) {
     let message: string;
     try {
       const body = (await res.json()) as { detail?: string };
@@ -109,30 +92,6 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // ── Auth API ──────────────────────────────────────────────────────────────────
-
-export function sendOtp(email: string): Promise<{ message: string }> {
-  return apiFetch<{ message: string }>("/api/auth/send-otp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
-}
-
-export function verifyOtp(email: string, code: string): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>("/api/auth/verify-otp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, code }),
-  });
-}
-
-export function logoutUser(refresh_token: string): Promise<void> {
-  return apiFetch<void>("/api/auth/logout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token }),
-  });
-}
 
 export function fetchMe(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
@@ -172,11 +131,14 @@ export function saveSharedArc(shareToken: string): Promise<{ message: string; ar
   return apiFetch(`/api/arc/shared/${shareToken}/save`, { method: "POST" });
 }
 
-export function notifyArc(jobId: string): Promise<{ message: string }> {
+export function notifyArc(
+  jobId: string,
+  fcmToken: string,
+): Promise<{ message: string }> {
   return apiFetch<{ message: string }>("/api/arc/notify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ job_id: jobId }),
+    body: JSON.stringify({ job_id: jobId, fcm_token: fcmToken }),
   });
 }
 

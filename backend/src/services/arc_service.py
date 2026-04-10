@@ -21,7 +21,7 @@ from src.prompts import generate_arc_data_prompt
 from src.schemas.output_schema import OutputSchema
 from src.schemas.notification_schema import NotificationSchema
 from src.database import SessionLocal
-from src.services.email_service import send_arc_ready_email
+from src.services.push_service import send_push_notification
 from src.services.gcs_service import upload_bytes, upload_text
 
 load_dotenv()
@@ -234,6 +234,7 @@ def _save_arc_to_db(
 
 
 def _dispatch_notifications(job_id: str) -> None:
+    """Send FCM push notifications for all pending subscriptions for this job."""
     db = SessionLocal()
     try:
         pending = (
@@ -241,15 +242,21 @@ def _dispatch_notifications(job_id: str) -> None:
             .filter(
                 NotificationSchema.job_id == job_id,
                 NotificationSchema.sent_at.is_(None),
+                NotificationSchema.fcm_token.isnot(None),
             )
             .all()
         )
         for n in pending:
             try:
-                send_arc_ready_email(n.email, job_id)
+                send_push_notification(n.fcm_token, job_id)  # type: ignore[arg-type]
                 n.sent_at = datetime.now(timezone.utc)
             except Exception as exc:
-                logger.error("Notification failed for %s: %s", n.email, exc)
+                logger.error(
+                    "Push notification failed for job %s (token …%s): %s",
+                    job_id,
+                    n.fcm_token[-8:] if n.fcm_token else "?",
+                    exc,
+                )
         db.commit()
     except Exception as exc:
         db.rollback()

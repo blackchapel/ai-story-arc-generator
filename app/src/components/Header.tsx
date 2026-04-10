@@ -7,7 +7,7 @@ interface HeaderProps {
 }
 
 export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
-  const { user, logout } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -71,7 +71,13 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
       </span>
 
       <div className="relative" ref={dropdownRef}>
-        {user ? (
+        {isLoading ? (
+          <div
+            className="h-[34px] w-[34px] flex-shrink-0 rounded-full bg-[#EBEBEB]"
+            style={{ animation: "skeletonPulse 1.4s ease-in-out infinite" }}
+            aria-hidden="true"
+          />
+        ) : user ? (
           <button
             onClick={toggleDropdown}
             className="flex h-[34px] w-[34px] flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-opacity active:opacity-70"
@@ -138,7 +144,10 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
         )}
       </div>
 
-      <style>{`@keyframes dropIn{from{opacity:0;transform:translateY(-6px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}`}</style>
+      <style>{`
+        @keyframes dropIn{from{opacity:0;transform:translateY(-6px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes skeletonPulse{0%,100%{opacity:1}50%{opacity:0.4}}
+      `}</style>
     </header>
   );
 });

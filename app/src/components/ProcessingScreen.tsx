@@ -1,5 +1,6 @@
 import { memo, useEffect, useState, useCallback, useRef } from "react";
 import { useJobPoller } from "@/hooks/useJobPoller";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { notifyArc } from "@/apis";
 import type { JobStatus } from "@/types/job";
 
@@ -252,6 +253,15 @@ interface ProcessingScreenProps {
   onBack: () => void;
 }
 
+type NotifyState =
+  | "idle" // Not started
+  | "loading" // Permission requested or token being fetched
+  | "done" // Successfully registered
+  | "denied" // User blocked notifications
+  | "unsupported" // Browser doesn't support push
+  | "ios-no-pwa" // iOS Safari without PWA install
+  | "error"; // Network/API error
+
 export const ProcessingScreen = memo<ProcessingScreenProps>(
   ({ jobId, onComplete, onError, onBack }) => {
     const { state, stop } = useJobPoller(jobId);
@@ -259,25 +269,48 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
     const angleRef = useRef(135);
 
     // ── Notify (single-tap, no modal) ─────────────────────────────────────────
-    const STORAGE_KEY = `arc-notified-${jobId}`;
-    type NotifyState = "idle" | "loading" | "done" | "error";
-    const [notifyState, setNotifyState] = useState<NotifyState>(() =>
-      localStorage.getItem(STORAGE_KEY) ? "done" : "idle",
-    );
+    const { permissionState, requestAndGetToken } = usePushNotifications();
+
+    const STORAGE_KEY = `arc-push-${jobId}`;
+    const [notifyState, setNotifyState] = useState<NotifyState>(() => {
+      if (localStorage.getItem(STORAGE_KEY)) return "done";
+      return "idle";
+    });
 
     const handleNotify = useCallback(async () => {
       if (notifyState !== "idle" && notifyState !== "error") return;
+
+      // Surface non-permission states immediately without asking
+      if (permissionState === "unsupported") {
+        setNotifyState("unsupported");
+        return;
+      }
+      if (permissionState === "ios-no-pwa") {
+        setNotifyState("ios-no-pwa");
+        return;
+      }
+      if (permissionState === "denied") {
+        setNotifyState("denied");
+        return;
+      }
+
       setNotifyState("loading");
       try {
-        await notifyArc(jobId);
+        const token = await requestAndGetToken();
+        if (!token) {
+          // requestAndGetToken returns null when permission is denied or unsupported
+          const current = Notification.permission;
+          setNotifyState(current === "denied" ? "denied" : "unsupported");
+          return;
+        }
+        await notifyArc(jobId, token);
         localStorage.setItem(STORAGE_KEY, "1");
         setNotifyState("done");
       } catch {
         setNotifyState("error");
-        // Reset after 2 s so user can retry
-        setTimeout(() => setNotifyState("idle"), 2000);
+        setTimeout(() => setNotifyState("idle"), 2500);
       }
-    }, [jobId, notifyState, STORAGE_KEY]);
+    }, [jobId, notifyState, permissionState, requestAndGetToken, STORAGE_KEY]);
 
     // Rotating gradient + live theme-color sync
     useEffect(() => {
@@ -408,62 +441,59 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
 
         {/* Footer */}
         <div
-          className="flex-shrink-0 px-6 pb-10 pt-4 text-center"
+          className="flex flex-col flex-shrink-0 items-center px-6 pb-10 pt-4 text-center"
           style={{ borderTop: "1px solid #F5F5F5" }}
         >
           <button
             onClick={handleNotify}
-            disabled={notifyState !== "idle"}
-            className={`mb-3 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-[11px] text-[13px] font-semibold transition-all ${
+            disabled={
+              notifyState === "loading" ||
+              notifyState === "done" ||
+              notifyState === "denied" ||
+              notifyState === "unsupported" ||
+              notifyState === "ios-no-pwa"
+            }
+            aria-label={
               notifyState === "done"
-                ? "cursor-default border-[#E8F5F0] bg-[rgba(16,185,129,0.07)] text-[#10B981]"
-                : notifyState === "error"
-                  ? "cursor-default border-[#FEE2E2] bg-[rgba(239,68,68,0.06)] text-[#EF4444]"
-                  : notifyState === "loading"
-                    ? "cursor-default border-[#EBEBEB] bg-[#F5F5F5] text-[#8C8C8C]"
-                    : "cursor-pointer border-[#EBEBEB] bg-[#F5F5F5] text-[#0C0C0C] active:bg-[#EDEDED]"
-            }`}
-            aria-live="polite"
+                ? "Push notification registered"
+                : notifyState === "denied"
+                  ? "Notifications blocked in browser settings"
+                  : notifyState === "unsupported"
+                    ? "Push notifications not supported in this browser"
+                    : notifyState === "ios-no-pwa"
+                      ? "Install arc to your home screen to enable notifications"
+                      : "Notify me when this arc is ready"
+            }
+            className="flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-[13px] font-semibold transition-all disabled:cursor-default"
+            style={
+              notifyState === "done"
+                ? {
+                    background: "rgba(16,185,129,0.08)",
+                    borderColor: "rgba(16,185,129,0.3)",
+                    color: "#10B981",
+                  }
+                : notifyState === "denied" ||
+                    notifyState === "unsupported" ||
+                    notifyState === "ios-no-pwa"
+                  ? {
+                      background: "rgba(0,0,0,0.03)",
+                      borderColor: "#EBEBEB",
+                      color: "#ABABAB",
+                      cursor: "not-allowed",
+                    }
+                  : notifyState === "error"
+                    ? {
+                        background: "rgba(239,68,68,0.06)",
+                        borderColor: "rgba(239,68,68,0.2)",
+                        color: "#EF4444",
+                      }
+                    : {
+                        background: "rgba(99,102,241,0.06)",
+                        borderColor: "rgba(99,102,241,0.2)",
+                        color: "#6366F1",
+                      }
+            }
           >
-            {notifyState === "done" && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M2 7l4 4 6-6"
-                    stroke="#10B981"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                You will receive an email when ready!
-              </>
-            )}
-            {notifyState === "error" && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 3v4M7 9.5v.5"
-                    stroke="#EF4444"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                Failed — tap to retry
-              </>
-            )}
             {notifyState === "loading" && (
               <>
                 <svg
@@ -478,47 +508,144 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
                     cx="7"
                     cy="7"
                     r="5.5"
-                    stroke="#ABABAB"
-                    strokeWidth="2"
+                    stroke="currentColor"
                     strokeOpacity="0.3"
+                    strokeWidth="1.8"
                   />
                   <path
                     d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5"
-                    stroke="#8C8C8C"
-                    strokeWidth="2"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
                     strokeLinecap="round"
                   />
                 </svg>
-                Setting up notification…
+                <span>Setting up…</span>
               </>
             )}
-            {notifyState === "idle" && (
+            {notifyState === "done" && (
               <>
                 <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 15 15"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
                   fill="none"
                   aria-hidden="true"
                 >
                   <path
-                    d="M7.5 1a6.5 6.5 0 1 1 0 13A6.5 6.5 0 0 1 7.5 1Z"
-                    stroke="#6366F1"
-                    strokeWidth="1.3"
-                  />
-                  <path
-                    d="M7.5 4.5v4l2.5 1.5"
-                    stroke="#6366F1"
-                    strokeWidth="1.3"
+                    d="M2.5 7l3.5 3.5 5.5-7"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
                 </svg>
-                Notify me when it's ready
+                <span>You'll be notified</span>
+              </>
+            )}
+            {notifyState === "denied" && (
+              <>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="7"
+                    cy="7"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  />
+                  <path
+                    d="M7 4v4M7 9.5v.5"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Notifications blocked</span>
+              </>
+            )}
+            {notifyState === "unsupported" && (
+              <>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 2a5 5 0 1 0 0 10A5 5 0 0 0 7 2zM4.5 4.5l5 5M9.5 4.5l-5 5"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Not supported</span>
+              </>
+            )}
+            {notifyState === "ios-no-pwa" && (
+              <>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="3"
+                    y="1"
+                    width="8"
+                    height="12"
+                    rx="1.5"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  />
+                  <path
+                    d="M5 11h4"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Install app to notify</span>
+              </>
+            )}
+            {(notifyState === "idle" || notifyState === "error") && (
+              <>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 1.5C4.5 1.5 2.5 3.5 2.5 6v3l-1 1.5h11L11.5 9V6C11.5 3.5 9.5 1.5 7 1.5z"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M5.5 10.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>
+                  {notifyState === "error"
+                    ? "Failed — tap to retry"
+                    : "Notify me when ready"}
+                </span>
               </>
             )}
           </button>
-          <p className="text-[11px] text-[#ABABAB]">
+          <p className="mt-3 text-[11px] text-[#ABABAB]">
             You can close this tab — we'll keep it warm.
           </p>
         </div>

@@ -8,8 +8,6 @@ from src.database import engine, Base, SessionLocal
 
 # Import all schemas so Base.metadata includes every table before create_all
 from src.schemas.user_schema import UserSchema            # noqa: F401
-from src.schemas.refresh_token_schema import RefreshTokenSchema  # noqa: F401
-from src.schemas.otp_schema import OtpSchema              # noqa: F401
 from src.schemas.output_schema import OutputSchema        # noqa: F401
 from src.schemas.notification_schema import NotificationSchema  # noqa: F401
 from src.schemas.saved_arc_schema import SavedArcSchema   # noqa: F401

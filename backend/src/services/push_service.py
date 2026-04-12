@@ -19,12 +19,11 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
 
     arc_url = f"{_APP_BASE_URL}/arc/{job_id}"
 
+    # No top-level `notification` field — that would cause FCM to show a second
+    # OS notification automatically, in addition to the one our service worker
+    # shows via onBackgroundMessage. Data-only + webpush is the correct pattern.
     message = messaging.Message(
         token=fcm_token,
-        notification=messaging.Notification(
-            title="Your arc is ready",
-            body="The story arc you requested has finished generating.",
-        ),
         data={
             "job_id": job_id,
             "url": arc_url,

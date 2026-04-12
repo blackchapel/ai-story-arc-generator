@@ -1,7 +1,16 @@
 import type { NewsArticle, User, ActiveJob } from "@/types";
 import type { SubmitJobResponse, StatusResponse } from "@/types/job";
 import { auth } from "@/lib/firebase";
-import { signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+
+// Resolves once Firebase has restored auth state from IndexedDB (or confirmed
+// the user is signed out). Prevents treating "not yet hydrated" as "logged out".
+const _authReady: Promise<void> = new Promise((resolve) => {
+  const unsub = onAuthStateChanged(auth, () => {
+    unsub();
+    resolve();
+  });
+});
 
 const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -32,6 +41,11 @@ async function getAuthToken(): Promise<string | null> {
 // ── Core fetch ────────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Wait for Firebase to restore auth from IndexedDB before sending any request.
+  // Without this, a fresh tab (e.g. opened by a push notification) would race
+  // the hydration and send requests with no token, then incorrectly sign out.
+  await _authReady;
+
   const headers = new Headers(init.headers);
 
   const token = await getAuthToken();
@@ -72,7 +86,8 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
         throw new ApiError(401, "Session expired. Please log in again.");
       }
     }
-    await signOut(auth);
+    // auth.currentUser is null AND auth is fully hydrated — genuinely signed out.
+    // Do NOT sign out here (it's a no-op and would fire unnecessary state events).
     throw new ApiError(401, "Session expired. Please log in again.");
   }
 
@@ -95,6 +110,14 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export function fetchMe(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
+}
+
+export function sendMagicLink(email: string): Promise<void> {
+  return apiFetch<void>("/api/auth/send-magic-link", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
 }
 
 // ── Arc API ───────────────────────────────────────────────────────────────────

@@ -9,15 +9,13 @@ import {
 import type { ReactNode } from "react";
 import {
   onAuthStateChanged,
-  sendSignInLinkToEmail,
   signInWithEmailLink,
   isSignInWithEmailLink,
   signOut,
-  type ActionCodeSettings,
   type User as FirebaseUser,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { fetchMe } from "@/apis";
+import { fetchMe, sendMagicLink as sendMagicLinkApi } from "@/apis";
 import { emailStore } from "@/utils/tokenStore";
 import type { User } from "@/types";
 
@@ -39,15 +37,6 @@ export interface AuthContextValue {
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
-
-function getActionCodeSettings(): ActionCodeSettings {
-  return {
-    // Firebase redirects here after the user clicks the magic link.
-    // Must be an authorised domain in Firebase Console → Auth → Settings.
-    url: import.meta.env.VITE_APP_BASE_URL ?? window.location.origin,
-    handleCodeInApp: true,
-  };
-}
 
 function cleanSignInUrl(): void {
   try {
@@ -140,8 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   const sendMagicLink = useCallback(async (email: string): Promise<void> => {
-    await sendSignInLinkToEmail(auth, email, getActionCodeSettings());
-    emailStore.save(email); // saved for auto-completion on same device
+    await sendMagicLinkApi(email);
+    emailStore.save(email);
   }, []);
 
   const completeLinkSignIn = useCallback(

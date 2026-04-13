@@ -40,15 +40,14 @@ const firebaseApp = initializeApp({
 const messaging = getMessaging(firebaseApp);
 
 onBackgroundMessage(messaging, (payload) => {
-  const title = payload.notification?.title ?? "arc.";
-  const body =
-    payload.notification?.body ?? "Your story arc has finished generating.";
-  const jobId = (payload.data as Record<string, string> | undefined)?.["job_id"];
-  const arcUrl =
-    (payload.data as Record<string, string> | undefined)?.["url"] ?? "/";
+  // Backend sends data-only messages (no notification field), so we always
+  // show the notification ourselves — no browser auto-display, no duplicates.
+  const data = payload.data as Record<string, string> | undefined;
+  const jobId = data?.["job_id"];
+  const arcUrl = data?.["url"] ?? "/";
 
-  self.registration.showNotification(title, {
-    body,
+  self.registration.showNotification("arc.", {
+    body: "Your story arc has finished generating.",
     icon: "/pwa-192x192.png",
     badge: "/pwa-192x192.png",
     // tag deduplicates: only one notification per arc

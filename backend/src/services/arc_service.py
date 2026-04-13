@@ -22,7 +22,7 @@ from src.schemas.output_schema import OutputSchema
 from src.schemas.notification_schema import NotificationSchema
 from src.database import SessionLocal
 from src.services.push_service import send_push_notification
-from src.services.gcs_service import upload_bytes, upload_text
+from src.services.gcs_service import upload_bytes, upload_text, delete_blob
 
 load_dotenv()
 
@@ -265,11 +265,44 @@ def _dispatch_notifications(job_id: str) -> None:
         db.close()
 
 
+def _delete_arc_from_db(arc_id: str) -> None:
+    """Best-effort deletion of an arc and its associated assets. Never raises."""
+    db = SessionLocal()
+    try:
+        arc = db.query(OutputSchema).filter(OutputSchema.id == arc_id).first()
+        if not arc:
+            return
+
+        # Best-effort GCS cleanup — same URL parse as the delete endpoint in arc_api
+        if arc.html and arc.html.startswith("https://storage.googleapis.com/"):
+            # URL format: https://storage.googleapis.com/{bucket}/{path}
+            parts = arc.html.split("/", 4)
+            if len(parts) == 5:
+                try:
+                    delete_blob(parts[4])
+                except Exception as exc:
+                    logger.error("GCS deletion failed for arc %s: %s", arc_id, exc)
+
+        # Delete associated notifications (no FK cascade on this table)
+        db.query(NotificationSchema).filter(NotificationSchema.job_id == arc_id).delete()
+
+        # saved_arcs cascade via FK; delete the output row last
+        db.delete(arc)
+        db.commit()
+        logger.info("Replaced arc %s deleted", arc_id)
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to delete replaced arc %s: %s", arc_id, exc)
+    finally:
+        db.close()
+
+
 def run_pipeline(
     topic: str,
     job_id: str,
     on_status: Callable[[str], None] | None = None,
     user_id: str = "",
+    replace_arc_id: str | None = None,
 ) -> None:
     start = time.time()
 
@@ -302,6 +335,9 @@ def run_pipeline(
             html_url,
             user_id=user_id,
         )
+
+        if replace_arc_id:
+            _delete_arc_from_db(replace_arc_id)
 
         emit("COMPLETED")
         _dispatch_notifications(job_id)

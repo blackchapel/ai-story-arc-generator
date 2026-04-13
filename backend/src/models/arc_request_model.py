@@ -13,3 +13,7 @@ class ArcRequestModel(BaseModel):
         if len(v) > 500:
             raise ValueError("Prompt must be 500 characters or fewer")
         return v
+
+
+class RegenerateRequestModel(BaseModel):
+    replace: bool = False

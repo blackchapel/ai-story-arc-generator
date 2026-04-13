@@ -228,7 +228,9 @@ export const ResultScreen = memo<ResultScreenProps>(
 
     // ── Action loading states ─────────────────────────────────────────────────
     const [sharingLoading, setSharingLoading] = useState(false);
-    const [regenLoading, setRegenLoading] = useState(false);
+    // null = idle, "replace" = replace in-flight, "keep" = keep-both in-flight
+    const [regenMode, setRegenMode] = useState<"replace" | "keep" | null>(null);
+    const regenLoading = regenMode !== null;
     const [deleteLoading, setDeleteLoading] = useState(false);
 
     const isOwner = !!user && !!arc && arc.user_id === user.id;
@@ -331,19 +333,22 @@ export const ResultScreen = memo<ResultScreenProps>(
     }, [arc, sharingLoading]);
 
     // ── Regenerate ────────────────────────────────────────────────────────────
-    const handleRegenerate = useCallback(async () => {
-      if (!arc || regenLoading) return;
-      setSheet("none");
-      setRegenLoading(true);
-      try {
-        const { job_id } = await regenerateArc(arc.id);
-        onRegenerate(job_id);
-      } catch {
-        /* silent */
-      } finally {
-        setRegenLoading(false);
-      }
-    }, [arc, regenLoading, onRegenerate]);
+    const handleRegenerate = useCallback(
+      async (mode: "replace" | "keep") => {
+        if (!arc || regenLoading) return;
+        setSheet("none");
+        setRegenMode(mode);
+        try {
+          const { job_id } = await regenerateArc(arc.id, mode === "replace");
+          onRegenerate(job_id);
+        } catch {
+          /* silent */
+        } finally {
+          setRegenMode(null);
+        }
+      },
+      [arc, regenLoading, onRegenerate],
+    );
 
     // ── Delete ────────────────────────────────────────────────────────────────
     const handleDelete = useCallback(async () => {
@@ -660,30 +665,87 @@ export const ResultScreen = memo<ResultScreenProps>(
                 <RefreshIcon />
               </div>
               <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
-                Update this arc?
+                Update this arc
               </h2>
               <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
-                We'll regenerate the arc using the same topic but with the
-                latest news. This creates a new arc — your current one stays
-                untouched.
+                We'll regenerate using the same topic with the latest news.
+                Choose what to do with your current arc.
               </p>
               <div className="mt-5 flex flex-col gap-2.5">
+                {/* Replace option */}
                 <button
-                  onClick={handleRegenerate}
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[14px] text-[15px] font-bold text-white transition-opacity active:opacity-80"
+                  onClick={() => handleRegenerate("replace")}
+                  disabled={regenLoading}
+                  className="flex w-full cursor-pointer items-start gap-3.5 rounded-2xl border-none px-4 py-3.5 text-left transition-opacity active:opacity-80 disabled:opacity-60"
                   style={{
-                    background: "linear-gradient(135deg,#0EA5E9,#6366F1)",
-                    boxShadow: "0 4px 16px rgba(14,165,233,0.28)",
+                    background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
+                    boxShadow: "0 4px 16px rgba(99,102,241,0.28)",
                   }}
                 >
-                  {regenLoading ? (
-                    <Spinner color="rgba(255,255,255,0.8)" />
-                  ) : null}
-                  Regenerate arc
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-white/20">
+                    {regenMode === "replace" ? (
+                      <Spinner color="rgba(255,255,255,0.9)" />
+                    ) : (
+                      <RefreshIcon />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[14px] font-bold text-white">Replace</p>
+                    <p className="mt-0.5 text-[12px] leading-snug text-white/70">
+                      Generate a new version and replace this arc
+                    </p>
+                  </div>
                 </button>
+
+                {/* Keep both option */}
+                <button
+                  onClick={() => handleRegenerate("keep")}
+                  disabled={regenLoading}
+                  className="flex w-full cursor-pointer items-start gap-3.5 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5 text-left transition-colors active:bg-[#F9F9F9] disabled:opacity-60"
+                >
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(99,102,241,0.08)] text-[#6366F1]">
+                    {regenMode === "keep" ? (
+                      <Spinner color="#6366F1" />
+                    ) : (
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <rect
+                          x="1.5"
+                          y="4"
+                          width="9"
+                          height="10"
+                          rx="1.5"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                        />
+                        <path
+                          d="M5 4V3a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 16 3v8a1.5 1.5 0 0 1-1.5 1.5H13"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[14px] font-bold text-[#0C0C0C]">
+                      Keep both
+                    </p>
+                    <p className="mt-0.5 text-[12px] leading-snug text-[#8C8C8C]">
+                      Generate new arc, keep this one too
+                    </p>
+                  </div>
+                </button>
+
                 <button
                   onClick={closeSheet}
-                  className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
+                  disabled={regenLoading}
+                  className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED] disabled:opacity-50"
                 >
                   Cancel
                 </button>

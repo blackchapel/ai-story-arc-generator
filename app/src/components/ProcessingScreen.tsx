@@ -383,7 +383,7 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
         >
           {/* Gradient orb — bleeds upward into status bar area */}
           <div
-            className="absolute left-1/2 top-0 h-[260px] w-[400px] -translate-x-1/2 -translate-y-[40%] rounded-full opacity-25 blur-[72px]"
+            className="pointer-events-none absolute left-1/2 top-0 h-[260px] w-[400px] -translate-x-1/2 -translate-y-[40%] rounded-full opacity-25 blur-[72px]"
             style={{
               background: `linear-gradient(${gradAngle}deg, #6366F1, #EC4899, #F5A623)`,
             }}
@@ -462,7 +462,7 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
                     ? "Push notifications not supported in this browser"
                     : notifyState === "ios-no-pwa"
                       ? "Install arc to your home screen to enable notifications"
-                      : "Notify me when this arc is ready"
+                      : "t when this arc is ready"
             }
             className="flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-[13px] font-semibold transition-all disabled:cursor-default"
             style={

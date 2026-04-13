@@ -169,10 +169,18 @@ export function fetchActiveJobs(): Promise<ActiveJob[]> {
   return apiFetch<ActiveJob[]>("/api/arc/jobs/active");
 }
 
-export function regenerateArc(arcId: string): Promise<{ job_id: string }> {
-  return apiFetch<{ job_id: string }>(`/api/arc/${arcId}/regenerate`, { method: "POST" });
+export function regenerateArc(arcId: string, replace = false): Promise<{ job_id: string }> {
+  return apiFetch<{ job_id: string }>(`/api/arc/${arcId}/regenerate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ replace }),
+  });
 }
 
 export function deleteArc(arcId: string): Promise<void> {
   return apiFetch<void>(`/api/arc/${arcId}`, { method: "DELETE" });
+}
+
+export function deleteAccount(): Promise<void> {
+  return apiFetch<void>("/api/auth/me", { method: "DELETE" });
 }

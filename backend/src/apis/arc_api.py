@@ -21,7 +21,7 @@ from src.schemas.job_schema import JobSchema
 from src.services.arc_service import run_pipeline
 from src.services.push_service import send_push_notification
 from src.services.gcs_service import delete_blob
-from src.models.arc_request_model import ArcRequestModel
+from src.models.arc_request_model import ArcRequestModel, RegenerateRequestModel
 from src.models.notification_model import NotifyRequestModel
 from src.models.output_model import OutputModel, OutputSummaryModel
 from src.models.job_model import ActiveJobModel
@@ -66,13 +66,14 @@ def _update_job_status(job_id: str, status: str) -> None:
 
 
 def _run_pipeline_bg(
-    job_id: str, topic: str, loop: asyncio.AbstractEventLoop, user_id: str
+    job_id: str, topic: str, loop: asyncio.AbstractEventLoop, user_id: str,
+    replace_arc_id: str | None = None,
 ) -> None:
     def on_status(s: str) -> None:
         jobs[job_id]["status"] = s
         _broadcast(job_id, s, loop)
         _update_job_status(job_id, s)
-    run_pipeline(topic, job_id, on_status=on_status, user_id=user_id)
+    run_pipeline(topic, job_id, on_status=on_status, user_id=user_id, replace_arc_id=replace_arc_id)
 
 
 # ── Helper: build OutputSummaryModel from ORM row ────────────────────────────
@@ -316,6 +317,7 @@ async def toggle_share(
 @router.post("/{arc_id}/regenerate", status_code=status.HTTP_202_ACCEPTED)
 async def regenerate_arc(
     arc_id: str,
+    body: RegenerateRequestModel,
     background_tasks: BackgroundTasks,
     current_user: Annotated[UserSchema, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -337,7 +339,11 @@ async def regenerate_arc(
     db.commit()
 
     loop = asyncio.get_running_loop()
-    background_tasks.add_task(_run_pipeline_bg, new_job_id, original_job.prompt, loop, current_user.id)
+    background_tasks.add_task(
+        _run_pipeline_bg,
+        new_job_id, original_job.prompt, loop, current_user.id,
+        replace_arc_id=arc_id if body.replace else None,
+    )
     return {"job_id": new_job_id, "status": "FETCHING_ARTICLES"}
 
 

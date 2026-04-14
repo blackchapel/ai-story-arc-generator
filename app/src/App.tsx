@@ -149,9 +149,14 @@ function AppInner() {
 
   const goHome = useCallback(() => {
     if (viewRef.current.screen !== "home") {
-      // Pop back to the home entry already in the stack.
-      // The popstate handler will call setView + refreshArcs + refreshActiveJobs.
-      history.back();
+      // Synchronously update both view state and URL — no dependency on async
+      // popstate. history.back() was unreliable: popstate fires on a later task,
+      // creating a race with the processing screen's rAF loop and auth state
+      // changes. replaceState is immediate and never fails.
+      setView({ screen: "home" });
+      history.replaceState({ screen: "home" } satisfies AppView, "", "/");
+      refreshArcs();
+      refreshActiveJobs();
     } else {
       // Already home (e.g. called programmatically after auth) — just refresh.
       refreshArcs();
@@ -173,16 +178,27 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Stable refs so the popstate listener never needs to re-register when user
+  // changes (avoids the narrow gap where the old handler is removed but the new
+  // one isn't added yet, during which a popstate could be silently dropped).
+  const refreshArcsRef = useRef(refreshArcs);
+  refreshArcsRef.current = refreshArcs;
+  const refreshActiveJobsRef = useRef(refreshActiveJobs);
+  refreshActiveJobsRef.current = refreshActiveJobs;
+
   useEffect(() => {
     const handler = (e: PopStateEvent) => {
       const nextView: AppView =
         e.state ?? resolveView(window.location.pathname);
       setView(nextView);
-      if (nextView.screen === "home") refreshArcs();
+      if (nextView.screen === "home") {
+        refreshArcsRef.current();
+        refreshActiveJobsRef.current();
+      }
     };
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
-  }, [refreshArcs]);
+  }, []); // empty deps — always-current via refs above
 
   // ── Active jobs fetch + live polling ────────────────────────────────────
   useEffect(() => {

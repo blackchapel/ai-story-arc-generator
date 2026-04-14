@@ -19,11 +19,11 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
 
     arc_url = f"{_APP_BASE_URL}/arc/{job_id}"
 
-    # Data-only message — no `notification` field at any level.
-    # When FCM sees a `notification` field (including webpush.notification),
-    # the browser auto-shows it AND our service worker's onBackgroundMessage
-    # also calls showNotification, resulting in two notifications.
-    # With only `data`, onBackgroundMessage fires once and is the sole handler.
+    # Include webpush.notification for reliable cross-platform delivery.
+    # Data-only messages are treated as silent/low-priority by browsers and
+    # won't reliably wake the service worker (particularly on iOS Safari PWA).
+    # The service worker's onBackgroundMessage handler guards against double-show
+    # by checking payload.notification before calling showNotification itself.
     message = messaging.Message(
         token=fcm_token,
         data={
@@ -31,6 +31,13 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
             "url": arc_url,
         },
         webpush=messaging.WebpushConfig(
+            notification=messaging.WebpushNotification(
+                title="arc.",
+                body="Your story arc has finished generating.",
+                icon="/pwa-192x192.png",
+                badge="/pwa-192x192.png",
+                tag=f"arc-ready-{job_id}",
+            ),
             fcm_options=messaging.WebpushFCMOptions(link=arc_url),
         ),
     )

@@ -90,7 +90,9 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
       setDeleteModalOpen(false);
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.";
       setDeleteError(message);
     } finally {
       setDeleteLoading(false);
@@ -160,9 +162,9 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
               background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
               boxShadow: "0 2px 10px rgba(99,102,241,0.32)",
             }}
-            aria-label="Login"
+            aria-label="Sign in"
           >
-            Login
+            Sign in
           </button>
         )}
 

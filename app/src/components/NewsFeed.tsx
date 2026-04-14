@@ -124,7 +124,7 @@ export const NewsFeed = memo<NewsFeedProps>(
                   Your story arcs live here
                 </p>
                 <p className="text-center text-[12px] leading-relaxed text-[#8C8C8C]">
-                  Login to generate and view your personalised story arcs.
+                  Sign in to generate and view your personalised story arcs.
                 </p>
                 <button
                   onClick={onSignInClick}
@@ -155,7 +155,7 @@ export const NewsFeed = memo<NewsFeedProps>(
                       strokeLinejoin="round"
                     />
                   </svg>
-                  Login to get started
+                  Sign in to get started
                 </button>
               </div>
             </div>

@@ -362,7 +362,7 @@ export const SharedArcScreen = memo<SharedArcScreenProps>(
                       strokeLinejoin="round"
                     />
                   </svg>
-                  Login to save to library
+                  Sign in to save to library
                 </>
               ) : (
                 <>

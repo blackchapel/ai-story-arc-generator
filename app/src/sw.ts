@@ -40,20 +40,23 @@ const firebaseApp = initializeApp({
 const messaging = getMessaging(firebaseApp);
 
 onBackgroundMessage(messaging, (payload) => {
-  // Backend sends data-only messages (no notification field), so we always
-  // show the notification ourselves — no browser auto-display, no duplicates.
+  // When webpush.notification is set in the FCM message, the browser (via
+  // Firebase SDK) already shows the notification automatically. Returning
+  // early here prevents a duplicate from our manual showNotification call.
+  if (payload.notification) return;
+
+  // Fallback path: data-only message (no notification payload).
   const data = payload.data as Record<string, string> | undefined;
   const jobId = data?.["job_id"];
   const arcUrl = data?.["url"] ?? "/";
 
-  self.registration.showNotification("arc.", {
+  // Return the promise so the SDK includes it in waitUntil — keeps the
+  // service worker alive until the notification is actually displayed.
+  return self.registration.showNotification("arc.", {
     body: "Your story arc has finished generating.",
     icon: "/pwa-192x192.png",
     badge: "/pwa-192x192.png",
-    // tag deduplicates: only one notification per arc
     tag: `arc-ready-${jobId ?? Date.now()}`,
-    // renotify is part of the Notifications spec but not yet in TS lib types
-    ...(({ renotify: false } as unknown) as NotificationOptions),
     data: { url: arcUrl },
   } as NotificationOptions);
 });

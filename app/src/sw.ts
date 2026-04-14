@@ -11,23 +11,22 @@ import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 declare const self: ServiceWorkerGlobalScope;
 
 // ── Workbox precaching ────────────────────────────────────────────────────────
-// __WB_MANIFEST is replaced at build time with the list of assets to precache.
 precacheAndRoute(
-  (self as unknown as { __WB_MANIFEST: { url: string; revision: string | null }[] })
-    .__WB_MANIFEST,
+  (
+    self as unknown as {
+      __WB_MANIFEST: { url: string; revision: string | null }[];
+    }
+  ).__WB_MANIFEST,
 );
 cleanupOutdatedCaches();
 
-// SPA navigation fallback — serve index.html for all unmatched navigation requests
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL("index.html"), {
     denylist: [/^\/api\//, /^\/output\//, /\.[^/]+$/],
   }),
 );
 
-// ── Firebase Cloud Messaging — background push ────────────────────────────────
-// Handles push notifications when the app is closed or in the background.
-// Vite processes this file, so import.meta.env.VITE_* values are substituted.
+// ── Firebase Cloud Messaging ──────────────────────────────────────────────────
 const firebaseApp = initializeApp({
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -39,48 +38,56 @@ const firebaseApp = initializeApp({
 
 const messaging = getMessaging(firebaseApp);
 
-onBackgroundMessage(messaging, (payload) => {
-  // When webpush.notification is set in the FCM message, the browser (via
-  // Firebase SDK) already shows the notification automatically. Returning
-  // early here prevents a duplicate from our manual showNotification call.
+// Background Message Handler
+onBackgroundMessage(messaging, async (payload) => {
+  console.log("[sw] Background message received:", payload);
+
+  // If the Python code sent a 'notification' object, the browser shows it automatically.
+  // We return early to avoid showing a duplicate.
   if (payload.notification) return;
 
-  // Fallback path: data-only message (no notification payload).
+  // Fallback: If for some reason the notification object is missing, manually show it.
   const data = payload.data as Record<string, string> | undefined;
-  const jobId = data?.["job_id"];
-  const arcUrl = data?.["url"] ?? "/";
+  const arcUrl = data?.url ?? "/";
+  const jobId = data?.job_id ?? "generic";
 
-  // Return the promise so the SDK includes it in waitUntil — keeps the
-  // service worker alive until the notification is actually displayed.
   return self.registration.showNotification("arc.", {
     body: "Your story arc has finished generating.",
     icon: "/pwa-192x192.png",
     badge: "/pwa-192x192.png",
-    tag: `arc-ready-${jobId ?? Date.now()}`,
-    data: { url: arcUrl },
+    tag: `arc-ready-${jobId}`,
+    data: { url: arcUrl }, // Store the URL for the click event
+    requireInteraction: true,
   } as NotificationOptions);
 });
 
-// ── Notification click — open or focus the app at the arc URL ─────────────────
-self.addEventListener("notificationclick", (event) => {
-  (event as NotificationEvent).notification.close();
-  const url: string =
-    ((event as NotificationEvent).notification.data as { url?: string } | null)?.url ?? "/";
+// ── Notification Click Logic ──────────────────────────────────────────────────
+self.addEventListener("notificationclick", (event: any) => {
+  event.notification.close();
 
-  (event as ExtendableEvent).waitUntil(
+  // 1. Try to get the URL from the data payload we sent from Python
+  // 2. Fallback to fcm_options.link (if provided)
+  // 3. Fallback to home page
+  const url =
+    event.notification.data?.url || event.notification.fcmOptions?.link || "/";
+
+  event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        // Focus + navigate an existing app window if one is open
+        // If an app tab is already open, navigate it to the arc and focus it
         for (const client of windowClients) {
+          if (client.url === url && "focus" in client) {
+            return client.focus();
+          }
           if ("navigate" in client && "focus" in client) {
-            return (client as WindowClient)
-              .navigate(url)
-              .then((c) => c?.focus());
+            return client.navigate(url).then((c: any) => c?.focus());
           }
         }
-        // No window open — launch the app
-        return self.clients.openWindow(url);
+        // Otherwise, open a new window/tab
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(url);
+        }
       }),
   );
 });

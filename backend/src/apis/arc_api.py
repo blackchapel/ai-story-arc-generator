@@ -113,7 +113,28 @@ def _to_detail(arc: OutputSchema, is_saved: bool = False) -> OutputModel:
     )
 
 
-# ── Public shared-arc routes (must come before /{arc_id}) ────────────────────
+# ── Public routes (must come before /{arc_id}) ───────────────────────────────
+
+_SHOWCASE_ARC_IDS: list[str] = [
+    "00c641cf-c0ed-439e-9d9b-c8f593ed5f51",
+    "79f54c3b-a415-42c0-9c32-87ee984e2dca",
+    "c03ea76d-924e-4d2f-8178-071c971869e8",
+]
+
+
+@router.get("/showcase", response_model=list[OutputSummaryModel])
+async def get_showcase_arcs(db: Session = Depends(get_db)):
+    """Return the curated showcase arcs for unauthenticated home page display."""
+    arcs = (
+        db.query(OutputSchema)
+        .filter(OutputSchema.id.in_(_SHOWCASE_ARC_IDS))
+        .all()
+    )
+    # Preserve the intended display order
+    order = {arc_id: i for i, arc_id in enumerate(_SHOWCASE_ARC_IDS)}
+    arcs.sort(key=lambda a: order.get(a.id, 99))
+    return [_to_summary(a) for a in arcs]
+
 
 @router.get("/shared/{share_token}", response_model=OutputModel)
 async def get_shared_arc(share_token: str, db: Session = Depends(get_db)):

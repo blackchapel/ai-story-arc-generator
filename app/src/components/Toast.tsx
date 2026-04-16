@@ -6,25 +6,69 @@ interface ToastProps {
   onDismiss: () => void;
 }
 
+const STYLES = {
+  error: {
+    background: "#FFF0F0",
+    border: "1px solid rgba(239,68,68,0.2)",
+    iconBg: "#EF4444",
+    textColor: "#991B1B",
+    dismissColor: "#B91C1C",
+  },
+  success: {
+    background: "#F0FDF4",
+    border: "1px solid rgba(16,185,129,0.2)",
+    iconBg: "#10B981",
+    textColor: "#065F46",
+    dismissColor: "#047857",
+  },
+} as const;
+
+function ErrorIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path
+        d="M5 2.5v3M5 7.5h.005"
+        stroke="white"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function SuccessIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path
+        d="M1.5 5l2.5 2.5 4.5-5"
+        stroke="white"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export const Toast = memo<ToastProps>(({ toast, onDismiss }) => {
-  // Drive a local "visible" flag so the exit animation plays before unmount
   const [visible, setVisible] = useState(false);
   const [currentToast, setCurrentToast] = useState<ToastType | null>(null);
 
   useEffect(() => {
     if (toast) {
       setCurrentToast(toast);
-      // Tiny rAF delay lets the enter animation fire cleanly
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
-      // Remove from DOM only after the exit transition finishes
       const t = setTimeout(() => setCurrentToast(null), 350);
       return () => clearTimeout(t);
     }
   }, [toast]);
 
   if (!currentToast) return null;
+
+  const type = currentToast.type ?? "error";
+  const s = STYLES[type];
 
   return (
     <div
@@ -38,8 +82,8 @@ export const Toast = memo<ToastProps>(({ toast, onDismiss }) => {
         onClick={onDismiss}
         className="pointer-events-auto flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 shadow-lg"
         style={{
-          background: "#FFF0F0",
-          border: "1px solid rgba(239,68,68,0.2)",
+          background: s.background,
+          border: s.border,
           transform: visible
             ? "translateY(0) scale(1)"
             : "translateY(-16px) scale(0.96)",
@@ -48,26 +92,19 @@ export const Toast = memo<ToastProps>(({ toast, onDismiss }) => {
             "transform 0.32s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s ease",
         }}
       >
-        {/* Error icon */}
+        {/* Icon */}
         <div
           className="mt-[1px] flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full"
-          style={{ background: "#EF4444" }}
+          style={{ background: s.iconBg }}
           aria-hidden="true"
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path
-              d="M5 2.5v3M5 7.5h.005"
-              stroke="white"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-          </svg>
+          {type === "success" ? <SuccessIcon /> : <ErrorIcon />}
         </div>
 
         {/* Message */}
         <p
           className="flex-1 text-[13px] font-semibold leading-[1.4]"
-          style={{ color: "#991B1B" }}
+          style={{ color: s.textColor }}
         >
           {currentToast.message}
         </p>
@@ -79,7 +116,8 @@ export const Toast = memo<ToastProps>(({ toast, onDismiss }) => {
             onDismiss();
           }}
           aria-label="Dismiss notification"
-          className="flex-shrink-0 border-none bg-transparent p-0 text-[#B91C1C] opacity-60 transition-opacity active:opacity-100"
+          className="flex-shrink-0 border-none bg-transparent p-0 opacity-60 transition-opacity active:opacity-100"
+          style={{ color: s.dismissColor }}
         >
           <svg
             width="12"

@@ -1,6 +1,8 @@
-import { memo, useEffect, useState, useCallback, useRef } from "react";
+import { memo, useEffect, useState, useCallback } from "react";
+import { useNavigate, useParams } from "react-router";
 import { useJobPoller } from "@/hooks/useJobPoller";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useShowToast } from "@/context/ToastContext";
 import { notifyArc } from "@/apis";
 import type { JobStatus } from "@/types/job";
 
@@ -60,49 +62,6 @@ const STATUS_ORDER: JobStatus[] = [
 
 function getStepIndex(status: JobStatus): number {
   return STATUS_ORDER.indexOf(status);
-}
-
-// ─── Utility: interpolate two hex colors ─────────────────────────────────────
-
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function lerpColor(a: string, b: string, t: number): string {
-  const [ar, ag, ab] = hexToRgb(a);
-  const [br, bg, bb] = hexToRgb(b);
-  const r = Math.round(ar + (br - ar) * t);
-  const g = Math.round(ag + (bg - ag) * t);
-  const bl = Math.round(ab + (bb - ab) * t);
-  return `rgb(${r},${g},${bl})`;
-}
-
-// Sample the top-left pixel of the gradient orb to get the current
-// status-bar color. We derive it mathematically instead of using canvas
-// so there's zero DOM cost.
-function getOrbTopColor(angle: number): string {
-  // The orb gradient cycles through these stops
-  const stops = ["#6366F1", "#EC4899", "#F5A623"];
-  // Normalise angle to [0,1] over a full 360° cycle
-  const t = ((angle % 360) + 360) % 360;
-  const segment = t / 120; // 3 stops → 120° each
-  const idx = Math.floor(segment) % stops.length;
-  const next = (idx + 1) % stops.length;
-  return lerpColor(stops[idx], stops[next], segment - Math.floor(segment));
-}
-
-// Write to <meta name="theme-color"> — browsers re-read this live
-function setThemeColor(color: string) {
-  let meta = document.querySelector<HTMLMetaElement>(
-    'meta[name="theme-color"]',
-  );
-  if (!meta) {
-    meta = document.createElement("meta");
-    meta.name = "theme-color";
-    document.head.appendChild(meta);
-  }
-  if (meta.content !== color) meta.content = color;
 }
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
@@ -246,13 +205,6 @@ StepRow.displayName = "StepRow";
 
 // ─── Processing Screen ────────────────────────────────────────────────────────
 
-interface ProcessingScreenProps {
-  jobId: string;
-  onComplete: (htmlUrl: string, jobId: string) => void;
-  onError: (message: string) => void;
-  onBack: () => void;
-}
-
 type NotifyState =
   | "idle" // Not started
   | "loading" // Permission requested or token being fetched
@@ -262,395 +214,370 @@ type NotifyState =
   | "ios-no-pwa" // iOS Safari without PWA install
   | "error"; // Network/API error
 
-export const ProcessingScreen = memo<ProcessingScreenProps>(
-  ({ jobId, onComplete, onError, onBack }) => {
-    const { state, stop } = useJobPoller(jobId);
-    const [gradAngle, setGradAngle] = useState(135);
-    const angleRef = useRef(135);
+export const ProcessingScreen = memo(function ProcessingScreen() {
+  const { jobId = "" } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  const showToast = useShowToast();
+  const { state, stop } = useJobPoller(jobId);
+  // ── Notify (single-tap, no modal) ─────────────────────────────────────────
+  const { permissionState, requestAndGetToken } = usePushNotifications();
 
-    // ── Notify (single-tap, no modal) ─────────────────────────────────────────
-    const { permissionState, requestAndGetToken } = usePushNotifications();
+  const STORAGE_KEY = `arc-push-${jobId}`;
+  const [notifyState, setNotifyState] = useState<NotifyState>(() => {
+    if (localStorage.getItem(STORAGE_KEY)) return "done";
+    return "idle";
+  });
 
-    const STORAGE_KEY = `arc-push-${jobId}`;
-    const [notifyState, setNotifyState] = useState<NotifyState>(() => {
-      if (localStorage.getItem(STORAGE_KEY)) return "done";
+  const handleNotify = useCallback(async () => {
+    if (notifyState !== "idle" && notifyState !== "error") return;
+
+    // Surface non-permission states immediately without asking
+    if (permissionState === "unsupported") {
+      setNotifyState("unsupported");
+      return;
+    }
+    if (permissionState === "ios-no-pwa") {
+      setNotifyState("ios-no-pwa");
+      return;
+    }
+    if (permissionState === "denied") {
+      setNotifyState("denied");
+      return;
+    }
+
+    setNotifyState("loading");
+    try {
+      const token = await requestAndGetToken();
+      if (!token) {
+        // requestAndGetToken returns null when permission is denied or unsupported
+        const current = Notification.permission;
+        setNotifyState(current === "denied" ? "denied" : "unsupported");
+        return;
+      }
+      await notifyArc(jobId, token);
+      localStorage.setItem(STORAGE_KEY, "1");
+      setNotifyState("done");
+    } catch {
+      setNotifyState("error");
+      setTimeout(() => setNotifyState("idle"), 2500);
+    }
+  }, [jobId, notifyState, permissionState, requestAndGetToken, STORAGE_KEY]);
+
+
+  useEffect(() => {
+    if (state.phase === "done") {
+      stop();
+      navigate(`/arc/${jobId}`, {
+        replace: true,
+        state: { htmlUrl: state.htmlUrl },
+      });
+    } else if (state.phase === "error") {
+      stop();
+      showToast(state.message);
+      navigate(-1);
+    }
+  }, [state, stop, jobId, navigate, showToast]);
+
+  const currentIndex =
+    state.phase === "polling" ? getStepIndex(state.status) : STEPS.length - 1;
+
+  const getStepState = useCallback(
+    (idx: number): StepState => {
+      if (idx < currentIndex) return "done";
+      if (idx === currentIndex) return "active";
       return "idle";
-    });
+    },
+    [currentIndex],
+  );
 
-    const handleNotify = useCallback(async () => {
-      if (notifyState !== "idle" && notifyState !== "error") return;
-
-      // Surface non-permission states immediately without asking
-      if (permissionState === "unsupported") {
-        setNotifyState("unsupported");
-        return;
-      }
-      if (permissionState === "ios-no-pwa") {
-        setNotifyState("ios-no-pwa");
-        return;
-      }
-      if (permissionState === "denied") {
-        setNotifyState("denied");
-        return;
-      }
-
-      setNotifyState("loading");
-      try {
-        const token = await requestAndGetToken();
-        if (!token) {
-          // requestAndGetToken returns null when permission is denied or unsupported
-          const current = Notification.permission;
-          setNotifyState(current === "denied" ? "denied" : "unsupported");
-          return;
-        }
-        await notifyArc(jobId, token);
-        localStorage.setItem(STORAGE_KEY, "1");
-        setNotifyState("done");
-      } catch {
-        setNotifyState("error");
-        setTimeout(() => setNotifyState("idle"), 2500);
-      }
-    }, [jobId, notifyState, permissionState, requestAndGetToken, STORAGE_KEY]);
-
-    // Rotating gradient + live theme-color sync
-    useEffect(() => {
-      let frame: number;
-
-      const tick = () => {
-        angleRef.current = (angleRef.current + 0.3) % 360;
-        setGradAngle(angleRef.current);
-
-        // Derive the color that sits at the very top of the orb and
-        // apply it to the browser chrome / status bar
-        const topColor = getOrbTopColor(angleRef.current);
-
-        // Blend it heavily toward white so the status bar stays light
-        // and readable (icons stay dark). Pure orb color is too saturated.
-        const blended = lerpColor(topColor, "#ffffff", 0.82);
-        setThemeColor(blended);
-
-        frame = requestAnimationFrame(tick);
-      };
-
-      frame = requestAnimationFrame(tick);
-
-      return () => {
-        cancelAnimationFrame(frame);
-        // Restore neutral white when leaving this screen
-        setThemeColor("#ffffff");
-      };
-    }, []);
-
-    useEffect(() => {
-      if (state.phase === "done") {
-        stop();
-        onComplete(state.htmlUrl, jobId);
-      } else if (state.phase === "error") {
-        stop();
-        onError(state.message);
-      }
-    }, [state, stop, onComplete, onError]);
-
-    const currentIndex =
-      state.phase === "polling" ? getStepIndex(state.status) : STEPS.length - 1;
-
-    const getStepState = useCallback(
-      (idx: number): StepState => {
-        if (idx < currentIndex) return "done";
-        if (idx === currentIndex) return "active";
-        return "idle";
-      },
-      [currentIndex],
-    );
-
-    return (
+  return (
+    <div
+      className="flex min-h-dvh w-full flex-col bg-white"
+      style={{ animation: "pageFadeIn 0.4s cubic-bezier(0.4,0,0.2,1) both" }}
+    >
+      {/*
+       * The orb sits behind the content including the safe-area zone.
+       * We let it bleed into the top with a negative margin so the
+       * gradient visually continues into the status bar region.
+       */}
       <div
-        className="flex min-h-dvh w-full flex-col bg-white"
-        style={{ animation: "pageFadeIn 0.4s cubic-bezier(0.4,0,0.2,1) both" }}
+        className="relative flex-shrink-0 overflow-visible px-6 pb-8"
+        style={{
+          // Extend above the safe area so color fills the status bar zone
+          paddingTop: "calc(env(safe-area-inset-top, 24px) + 40px)",
+          marginTop: 0,
+        }}
       >
-        {/*
-         * The orb sits behind the content including the safe-area zone.
-         * We let it bleed into the top with a negative margin so the
-         * gradient visually continues into the status bar region.
-         */}
+        {/* Gradient orb — bleeds upward into status bar area */}
         <div
-          className="relative flex-shrink-0 overflow-visible px-6 pb-8"
+          className="pointer-events-none absolute left-1/2 top-0 h-[260px] w-[400px] -translate-x-1/2 -translate-y-[40%] rounded-full opacity-25 blur-[72px]"
           style={{
-            // Extend above the safe area so color fills the status bar zone
-            paddingTop: "calc(env(safe-area-inset-top, 24px) + 40px)",
-            marginTop: 0,
+            background: "linear-gradient(135deg, #6366F1, #EC4899, #F5A623)",
           }}
+          aria-hidden="true"
+        />
+
+        <button
+          onClick={() => navigate(-1)}
+          className=" flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#8C8C8C] transition-colors active:bg-black/[0.12]"
+          aria-label="Go back"
         >
-          {/* Gradient orb — bleeds upward into status bar area */}
-          <div
-            className="pointer-events-none absolute left-1/2 top-0 h-[260px] w-[400px] -translate-x-1/2 -translate-y-[40%] rounded-full opacity-25 blur-[72px]"
-            style={{
-              background: `linear-gradient(${gradAngle}deg, #6366F1, #EC4899, #F5A623)`,
-            }}
+          <svg
+            width="8"
+            height="13"
+            viewBox="0 0 8 13"
+            fill="none"
             aria-hidden="true"
-          />
-
-          <button
-            onClick={onBack}
-            className=" flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#8C8C8C] transition-colors active:bg-black/[0.12]"
-            aria-label="Go back"
           >
-            <svg
-              width="8"
-              height="13"
-              viewBox="0 0 8 13"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M7 1.5L1.5 6.5L7 11.5"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+            <path
+              d="M7 1.5L1.5 6.5L7 11.5"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
 
-          <div className="relative mt-8 ml-6 mb-2">
-            <div className="mb-2 flex items-center">
-              <p className="select-none font-logo text-[26px] font-black leading-none tracking-[-1.5px] text-[#0C0C0C]">
-                arc<span style={{ color: "#F5A623" }}>.</span>
-              </p>
-            </div>
-            <h1 className="text-[22px] font-bold leading-tight text-[#0C0C0C]">
-              Building your arc
-            </h1>
-            <p className="mt-1 text-[13px] text-[#8C8C8C]">
-              Sit tight — this usually takes a few minutes.
+        <div className="relative mt-8 ml-6 mb-2">
+          <div className="mb-2 flex items-center">
+            <p className="select-none font-logo text-[26px] font-black leading-none tracking-[-1.5px] text-[#0C0C0C]">
+              arc<span style={{ color: "#F5A623" }}>.</span>
             </p>
           </div>
-        </div>
-
-        <div className="ml-6 flex-1 overflow-y-auto px-6">
-          {STEPS.map((meta, i) => (
-            <StepRow
-              key={meta.status}
-              meta={meta}
-              state={getStepState(i)}
-              index={i}
-              isLast={i === STEPS.length - 1}
-            />
-          ))}
-        </div>
-
-        {/* Footer */}
-        <div
-          className="flex flex-col flex-shrink-0 items-center px-6 pb-10 pt-4 text-center"
-          style={{ borderTop: "1px solid #F5F5F5" }}
-        >
-          <button
-            onClick={handleNotify}
-            disabled={
-              notifyState === "loading" ||
-              notifyState === "done" ||
-              notifyState === "denied" ||
-              notifyState === "unsupported" ||
-              notifyState === "ios-no-pwa"
-            }
-            aria-label={
-              notifyState === "done"
-                ? "Push notification registered"
-                : notifyState === "denied"
-                  ? "Notifications blocked in browser settings"
-                  : notifyState === "unsupported"
-                    ? "Push notifications not supported in this browser"
-                    : notifyState === "ios-no-pwa"
-                      ? "Install arc to your home screen to enable notifications"
-                      : "t when this arc is ready"
-            }
-            className="flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-[13px] font-semibold transition-all disabled:cursor-default"
-            style={
-              notifyState === "done"
-                ? {
-                    background: "rgba(16,185,129,0.08)",
-                    borderColor: "rgba(16,185,129,0.3)",
-                    color: "#10B981",
-                  }
-                : notifyState === "denied" ||
-                    notifyState === "unsupported" ||
-                    notifyState === "ios-no-pwa"
-                  ? {
-                      background: "rgba(0,0,0,0.03)",
-                      borderColor: "#EBEBEB",
-                      color: "#ABABAB",
-                      cursor: "not-allowed",
-                    }
-                  : notifyState === "error"
-                    ? {
-                        background: "rgba(239,68,68,0.06)",
-                        borderColor: "rgba(239,68,68,0.2)",
-                        color: "#EF4444",
-                      }
-                    : {
-                        background: "rgba(99,102,241,0.06)",
-                        borderColor: "rgba(99,102,241,0.2)",
-                        color: "#6366F1",
-                      }
-            }
-          >
-            {notifyState === "loading" && (
-              <>
-                <svg
-                  className="animate-spin"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <circle
-                    cx="7"
-                    cy="7"
-                    r="5.5"
-                    stroke="currentColor"
-                    strokeOpacity="0.3"
-                    strokeWidth="1.8"
-                  />
-                  <path
-                    d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span>Setting up…</span>
-              </>
-            )}
-            {notifyState === "done" && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M2.5 7l3.5 3.5 5.5-7"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span>You'll be notified</span>
-              </>
-            )}
-            {notifyState === "denied" && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <circle
-                    cx="7"
-                    cy="7"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                  />
-                  <path
-                    d="M7 4v4M7 9.5v.5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span>Notifications blocked</span>
-              </>
-            )}
-            {notifyState === "unsupported" && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 2a5 5 0 1 0 0 10A5 5 0 0 0 7 2zM4.5 4.5l5 5M9.5 4.5l-5 5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span>Not supported</span>
-              </>
-            )}
-            {notifyState === "ios-no-pwa" && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <rect
-                    x="3"
-                    y="1"
-                    width="8"
-                    height="12"
-                    rx="1.5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                  />
-                  <path
-                    d="M5 11h4"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span>Install app to notify</span>
-              </>
-            )}
-            {(notifyState === "idle" || notifyState === "error") && (
-              <>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 1.5C4.5 1.5 2.5 3.5 2.5 6v3l-1 1.5h11L11.5 9V6C11.5 3.5 9.5 1.5 7 1.5z"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M5.5 10.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span>
-                  {notifyState === "error"
-                    ? "Failed — tap to retry"
-                    : "Notify me when ready"}
-                </span>
-              </>
-            )}
-          </button>
-          <p className="mt-3 text-[11px] text-[#ABABAB]">
-            You can close this tab — we'll keep it warm.
+          <h1 className="text-[22px] font-bold leading-tight text-[#0C0C0C]">
+            Building your arc
+          </h1>
+          <p className="mt-1 text-[13px] text-[#8C8C8C]">
+            Sit tight — this usually takes a few minutes.
           </p>
         </div>
+      </div>
 
-        <style>{`
+      <div className="ml-6 flex-1 overflow-y-auto px-6">
+        {STEPS.map((meta, i) => (
+          <StepRow
+            key={meta.status}
+            meta={meta}
+            state={getStepState(i)}
+            index={i}
+            isLast={i === STEPS.length - 1}
+          />
+        ))}
+      </div>
+
+      {/* Footer */}
+      <div
+        className="flex flex-col flex-shrink-0 items-center px-6 pb-10 pt-4 text-center"
+        style={{ borderTop: "1px solid #F5F5F5" }}
+      >
+        <button
+          onClick={handleNotify}
+          disabled={
+            notifyState === "loading" ||
+            notifyState === "done" ||
+            notifyState === "denied" ||
+            notifyState === "unsupported" ||
+            notifyState === "ios-no-pwa"
+          }
+          aria-label={
+            notifyState === "done"
+              ? "Push notification registered"
+              : notifyState === "denied"
+                ? "Notifications blocked in browser settings"
+                : notifyState === "unsupported"
+                  ? "Push notifications not supported in this browser"
+                  : notifyState === "ios-no-pwa"
+                    ? "Install arc to your home screen to enable notifications"
+                    : "t when this arc is ready"
+          }
+          className="flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-[13px] font-semibold transition-all disabled:cursor-default"
+          style={
+            notifyState === "done"
+              ? {
+                  background: "rgba(16,185,129,0.08)",
+                  borderColor: "rgba(16,185,129,0.3)",
+                  color: "#10B981",
+                }
+              : notifyState === "denied" ||
+                  notifyState === "unsupported" ||
+                  notifyState === "ios-no-pwa"
+                ? {
+                    background: "rgba(0,0,0,0.03)",
+                    borderColor: "#EBEBEB",
+                    color: "#ABABAB",
+                    cursor: "not-allowed",
+                  }
+                : notifyState === "error"
+                  ? {
+                      background: "rgba(239,68,68,0.06)",
+                      borderColor: "rgba(239,68,68,0.2)",
+                      color: "#EF4444",
+                    }
+                  : {
+                      background: "rgba(99,102,241,0.06)",
+                      borderColor: "rgba(99,102,241,0.2)",
+                      color: "#6366F1",
+                    }
+          }
+        >
+          {notifyState === "loading" && (
+            <>
+              <svg
+                className="animate-spin"
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="5.5"
+                  stroke="currentColor"
+                  strokeOpacity="0.3"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Setting up…</span>
+            </>
+          )}
+          {notifyState === "done" && (
+            <>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M2.5 7l3.5 3.5 5.5-7"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>You'll be notified</span>
+            </>
+          )}
+          {notifyState === "denied" && (
+            <>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="6"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M7 4v4M7 9.5v.5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Notifications blocked</span>
+            </>
+          )}
+          {notifyState === "unsupported" && (
+            <>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M7 2a5 5 0 1 0 0 10A5 5 0 0 0 7 2zM4.5 4.5l5 5M9.5 4.5l-5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Not supported</span>
+            </>
+          )}
+          {notifyState === "ios-no-pwa" && (
+            <>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="3"
+                  y="1"
+                  width="8"
+                  height="12"
+                  rx="1.5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M5 11h4"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Install app to notify</span>
+            </>
+          )}
+          {(notifyState === "idle" || notifyState === "error") && (
+            <>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M7 1.5C4.5 1.5 2.5 3.5 2.5 6v3l-1 1.5h11L11.5 9V6C11.5 3.5 9.5 1.5 7 1.5z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M5.5 10.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>
+                {notifyState === "error"
+                  ? "Failed — tap to retry"
+                  : "Notify me when ready"}
+              </span>
+            </>
+          )}
+        </button>
+        <p className="mt-3 text-[11px] text-[#ABABAB]">
+          You can close this tab — we'll keep it warm.
+        </p>
+      </div>
+
+      <style>{`
           @keyframes tickPop {
             from { transform: scale(0.4); opacity: 0; }
             to   { transform: scale(1);   opacity: 1; }
@@ -672,9 +599,8 @@ export const ProcessingScreen = memo<ProcessingScreenProps>(
             to   { opacity: 1; transform: translateY(0);    }
           }
         `}</style>
-      </div>
-    );
-  },
-);
+    </div>
+  );
+});
 
 ProcessingScreen.displayName = "ProcessingScreen";

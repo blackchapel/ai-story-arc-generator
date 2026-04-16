@@ -36,7 +36,7 @@ interface PromptBarProps {
   chips: PromptChip[];
   onSubmit: (value: string) => Promise<void>;
   onAuthRequired: () => void;
-  showToast: (message: string, durationMs?: number) => void;
+  showToast: (message: string) => void;
 }
 
 export const PromptBar = memo<PromptBarProps>(

@@ -16,25 +16,22 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
 
     message = messaging.Message(
         token=fcm_token,
-        # 1. Standard Notification (Universal fallback)
+        data={
+            "url": arc_url, 
+            "job_id": job_id 
+        },
         notification=messaging.Notification(
             title="arc.",
-            body="Your story arc has finished generating.",
+            body="Your story arc is ready!",
         ),
-        # 2. Custom Data (For your Service Worker logic)
-        data={
-            "job_id": job_id,
-            "url": arc_url,
-        },
-        # 3. Web-Specific Options (For PWA/Browser behavior)
         webpush=messaging.WebpushConfig(
             notification=messaging.WebpushNotification(
                 title="arc.",
-                body="Your story arc has finished generating.",
+                body="Your story arc is ready!",
                 icon="/pwa-192x192.png",
-                badge="/pwa-192x192.png",
-                tag=f"arc-ready-{job_id}", # Prevents duplicate notifications
-                require_interaction=True,   # Keeps it visible until clicked
+                data={
+                    "url": arc_url
+                }
             ),
             fcm_options=messaging.WebpushFCMOptions(link=arc_url),
         ),
@@ -44,7 +41,6 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
         messaging.send(message)
         logger.info("Push notification sent for job %s", job_id)
     except messaging.UnregisteredError:
-        # Handle the case where the user uninstalled the PWA
         logger.warning("Token %s is no longer valid. Remove from DB.", fcm_token)
     except Exception as e:
         logger.error("Failed to send push: %s", e)

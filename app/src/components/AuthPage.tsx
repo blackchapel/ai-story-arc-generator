@@ -1,21 +1,19 @@
 import { useState, useCallback, useRef, useEffect, useMemo, memo } from "react";
+import { useNavigate, useLocation } from "react-router";
 import { FirebaseError } from "firebase/app";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthStore } from "@/store/authStore";
+import { useShallow } from "zustand/react/shallow";
+import { useShowToast } from "@/context/ToastContext";
 import { useKeyboardOffset } from "@/hooks/useKeyboardOffset";
-import type { AppView } from "@/types/job";
+import { sendPrompt } from "@/apis";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface AuthPageProps {
-  onSuccess: (redirectAfter?: AppView) => void;
-  onBack: () => void;
-  redirectAfter?: AppView;
+// ── Location state passed when navigating to /auth ────────────────────────────
+interface AuthLocationState {
+  pendingPrompt?: string;
+  redirectAfter?: string;
 }
 
 type Step = "email" | "sent" | "confirm-link" | "signed-in";
-
-// ── Session persistence ───────────────────────────────────────────────────────
-// Survives mobile tab-switching / iOS Safari backgrounding within the same session.
 
 const SS_STEP = "arc-auth-step";
 const SS_EMAIL = "arc-auth-email";
@@ -25,7 +23,7 @@ function clearAuthSession() {
   sessionStorage.removeItem(SS_EMAIL);
 }
 
-// ── Spinner ───────────────────────────────────────────────────────────────────
+// ── Icon primitives ───────────────────────────────────────────────────────────
 
 function Spinner() {
   return (
@@ -53,8 +51,6 @@ function Spinner() {
     </svg>
   );
 }
-
-// ── Mail icon ─────────────────────────────────────────────────────────────────
 
 function MailIcon() {
   return (
@@ -87,11 +83,15 @@ function MailIcon() {
   );
 }
 
-// ── Back chevron ──────────────────────────────────────────────────────────────
-
 function BackChevron() {
   return (
-    <svg width="8" height="13" viewBox="0 0 8 13" fill="none" aria-hidden="true">
+    <svg
+      width="8"
+      height="13"
+      viewBox="0 0 8 13"
+      fill="none"
+      aria-hidden="true"
+    >
       <path
         d="M7 1.5L1.5 6.5L7 11.5"
         stroke="currentColor"
@@ -105,692 +105,682 @@ function BackChevron() {
 
 // ── AuthPage ──────────────────────────────────────────────────────────────────
 
-export const AuthPage = memo<AuthPageProps>(
-  ({ onSuccess, onBack: onBackProp, redirectAfter }) => {
-    const { user, sendMagicLink, completeLinkSignIn, pendingLinkSignIn } = useAuth();
-    const kbOffset = useKeyboardOffset();
+export const AuthPage = memo(function AuthPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const showToast = useShowToast();
 
-    // Detect iOS PWA (home-screen install). On iOS, magic links open in Safari
-    // which has isolated storage from the PWA — onAuthStateChanged won't fire.
-    const isIOSPWA = useMemo(() => {
-      const isIOS =
-        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const isStandalone =
-        window.matchMedia("(display-mode: standalone)").matches ||
-        (navigator as { standalone?: boolean }).standalone === true;
-      return isIOS && isStandalone;
-    }, []);
+  const { pendingPrompt, redirectAfter } =
+    (location.state as AuthLocationState | null) ?? {};
 
-    // ── Page-level closing animation ──────────────────────────────────────────
-    const [closing, setClosing] = useState(false);
+  const { user, sendMagicLink, completeLinkSignIn, pendingLinkSignIn } =
+    useAuthStore(
+      useShallow((s) => ({
+        user: s.user,
+        sendMagicLink: s.sendMagicLink,
+        completeLinkSignIn: s.completeLinkSignIn,
+        pendingLinkSignIn: s.pendingLinkSignIn,
+      })),
+    );
 
-    const dismiss = useCallback(() => {
+  const kbOffset = useKeyboardOffset();
+
+  const isIOSPWA = useMemo(() => {
+    const isIOS =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as { standalone?: boolean }).standalone === true;
+    return isIOS && isStandalone;
+  }, []);
+
+  // ── Closing animation state ───────────────────────────────────────────────
+  const [closing, setClosing] = useState(false);
+
+  const goBack = useCallback(() => navigate(-1), [navigate]);
+
+  const dismiss = useCallback(() => {
+    clearAuthSession();
+    setClosing(true);
+  }, []);
+
+  const handlePageAnimEnd = useCallback(
+    (e: React.AnimationEvent<HTMLDivElement>) => {
+      if (closing && e.animationName === "authPageOut") goBack();
+    },
+    [closing, goBack],
+  );
+
+  // ── Steps ─────────────────────────────────────────────────────────────────
+  const [step, setStep] = useState<Step>(() => {
+    if (pendingLinkSignIn) return "confirm-link";
+    const saved = sessionStorage.getItem(SS_STEP);
+    if (saved === "sent") return "sent";
+    return "email";
+  });
+
+  const [email, setEmail] = useState(
+    () => sessionStorage.getItem(SS_EMAIL) ?? "",
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [shakeKey, setShakeKey] = useState(0);
+
+  // ── Cross-tab sign-in detection ───────────────────────────────────────────
+  useEffect(() => {
+    if (user && step === "sent") {
       clearAuthSession();
-      setClosing(true);
-    }, []);
+      setStep("signed-in");
+    }
+  }, [user, step]);
 
-    const handlePageAnimEnd = useCallback(
-      (e: React.AnimationEvent<HTMLDivElement>) => {
-        if (closing && e.animationName === "authPageOut") onBackProp();
-      },
-      [closing, onBackProp],
-    );
+  // ── Persist step + email across tab switches ──────────────────────────────
+  useEffect(() => {
+    if (step === "confirm-link" || step === "signed-in") return;
+    sessionStorage.setItem(SS_STEP, step);
+  }, [step]);
 
-    // ── Step & form state — restored from sessionStorage on mount ─────────────
-    const [step, setStep] = useState<Step>(() => {
-      // Cross-device: pending link must be confirmed — skip sessionStorage
-      if (pendingLinkSignIn) return "confirm-link";
-      const saved = sessionStorage.getItem(SS_STEP);
-      if (saved === "sent") return "sent";
-      return "email";
-    });
+  useEffect(() => {
+    if (step === "sent") sessionStorage.setItem(SS_EMAIL, email);
+  }, [step, email]);
 
-    const [email, setEmail] = useState(
-      () => sessionStorage.getItem(SS_EMAIL) ?? "",
-    );
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-    const [shakeKey, setShakeKey] = useState(0);
+  // ── Resend cooldown ───────────────────────────────────────────────────────
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // ── Cross-tab / cross-context sign-in detection ───────────────────────────
-    // Firebase broadcasts auth state changes across tabs on the same origin.
-    // When the magic link is opened in another tab (browser) or another context
-    // (Android PWA + Chrome), onAuthStateChanged fires here too — transition to
-    // the "signed-in" confirmation step instead of navigating away automatically,
-    // since this tab may just be a background/stale tab the user wants to close.
-    useEffect(() => {
-      if (user && step === "sent") {
-        clearAuthSession();
-        setStep("signed-in");
-      }
-    }, [user, step]);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const confirmEmailRef = useRef<HTMLInputElement>(null);
 
-    // ── Persist step + email so the page survives tab switching ──────────────
-    useEffect(() => {
-      // Do not persist cross-device or post-auth steps.
-      if (step === "confirm-link" || step === "signed-in") return;
-      sessionStorage.setItem(SS_STEP, step);
-    }, [step]);
-
-    useEffect(() => {
-      if (step === "sent") sessionStorage.setItem(SS_EMAIL, email);
-    }, [step, email]);
-
-    // ── Resend cooldown ───────────────────────────────────────────────────────
-    const [resendCooldown, setResendCooldown] = useState(0);
-    const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    // ── Refs ──────────────────────────────────────────────────────────────────
-    const emailRef = useRef<HTMLInputElement>(null);
-    const confirmEmailRef = useRef<HTMLInputElement>(null);
-
-    // ── Cleanup on unmount ────────────────────────────────────────────────────
-    useEffect(
-      () => () => {
-        if (cooldownRef.current) clearInterval(cooldownRef.current);
-      },
-      [],
-    );
-
-    // ── Focus email input when step changes ───────────────────────────────────
-    useEffect(() => {
-      if (step === "email") {
-        const t = setTimeout(() => emailRef.current?.focus(), 80);
-        return () => clearTimeout(t);
-      }
-      if (step === "confirm-link") {
-        const t = setTimeout(() => confirmEmailRef.current?.focus(), 80);
-        return () => clearTimeout(t);
-      }
-    }, [step]);
-
-    // ── Error helpers ─────────────────────────────────────────────────────────
-    const triggerShake = useCallback(() => setShakeKey((k) => k + 1), []);
-    const setErrorWithShake = useCallback(
-      (msg: string) => {
-        setError(msg);
-        if (msg) triggerShake();
-      },
-      [triggerShake],
-    );
-
-    // ── Resend cooldown ───────────────────────────────────────────────────────
-    const startCooldown = useCallback(() => {
-      setResendCooldown(30);
+  useEffect(
+    () => () => {
       if (cooldownRef.current) clearInterval(cooldownRef.current);
-      cooldownRef.current = setInterval(() => {
-        setResendCooldown((prev) => {
-          if (prev <= 1) {
-            if (cooldownRef.current) clearInterval(cooldownRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }, []);
+    },
+    [],
+  );
 
-    // ── Step 1: send magic link ───────────────────────────────────────────────
-    const handleSendMagicLink = useCallback(async () => {
-      const trimmed = email.trim().toLowerCase();
-      if (!trimmed) {
-        setErrorWithShake("Please enter your email address.");
-        return;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-        setErrorWithShake("Please enter a valid email address.");
-        return;
-      }
-      setLoading(true);
-      setError("");
+  useEffect(() => {
+    if (step === "email") {
+      const t = setTimeout(() => emailRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+    if (step === "confirm-link") {
+      const t = setTimeout(() => confirmEmailRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [step]);
+
+  const triggerShake = useCallback(() => setShakeKey((k) => k + 1), []);
+  const setErrorWithShake = useCallback(
+    (msg: string) => {
+      setError(msg);
+      if (msg) triggerShake();
+    },
+    [triggerShake],
+  );
+
+  const startCooldown = useCallback(() => {
+    setResendCooldown(30);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          if (cooldownRef.current) clearInterval(cooldownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // ── Auth success navigation ───────────────────────────────────────────────
+  const handleAuthSuccess = useCallback(async () => {
+    clearAuthSession();
+    if (pendingPrompt) {
       try {
-        await sendMagicLink(trimmed);
-        setEmail(trimmed);
-        setStep("sent");
-        startCooldown();
-      } catch (err: unknown) {
-        setErrorWithShake(
-          err instanceof Error
+        const { job_id } = await sendPrompt(pendingPrompt);
+        navigate(`/process/${job_id}`, { replace: true });
+      } catch {
+        showToast("Failed to submit prompt. Please try again.");
+        navigate(-1);
+      }
+    } else if (redirectAfter) {
+      navigate(redirectAfter, { replace: true });
+    } else {
+      navigate("/", { replace: true });
+    }
+  }, [pendingPrompt, redirectAfter, navigate, showToast]);
+
+  // ── Step 1: send magic link ───────────────────────────────────────────────
+  const handleSendMagicLink = useCallback(async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) {
+      setErrorWithShake("Please enter your email address.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setErrorWithShake("Please enter a valid email address.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await sendMagicLink(trimmed);
+      setEmail(trimmed);
+      setStep("sent");
+      startCooldown();
+    } catch (err: unknown) {
+      setErrorWithShake(
+        err instanceof Error
+          ? err.message
+          : "Failed to send link. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [email, sendMagicLink, setErrorWithShake, startCooldown]);
+
+  const handleResend = useCallback(async () => {
+    if (resendCooldown > 0 || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      await sendMagicLink(email);
+      startCooldown();
+    } catch (err: unknown) {
+      setErrorWithShake(
+        err instanceof Error ? err.message : "Failed to resend link.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    resendCooldown,
+    loading,
+    sendMagicLink,
+    email,
+    startCooldown,
+    setErrorWithShake,
+  ]);
+
+  const handleBack = useCallback(() => {
+    setStep("email");
+    setError("");
+    sessionStorage.setItem(SS_STEP, "email");
+    setTimeout(() => emailRef.current?.focus(), 80);
+  }, []);
+
+  // ── Cross-device: confirm email ───────────────────────────────────────────
+  const [confirmEmail, setConfirmEmail] = useState("");
+
+  const handleCompleteLinkSignIn = useCallback(async () => {
+    const trimmed = confirmEmail.trim().toLowerCase();
+    if (!trimmed) {
+      setErrorWithShake("Please enter your email address.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setErrorWithShake("Please enter a valid email address.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await completeLinkSignIn(trimmed);
+      await handleAuthSuccess();
+    } catch (err: unknown) {
+      const message =
+        err instanceof FirebaseError
+          ? "This link has expired or is invalid. Please request a new one."
+          : err instanceof Error
             ? err.message
-            : "Failed to send link. Please try again.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, [email, sendMagicLink, setErrorWithShake, startCooldown]);
+            : "Sign-in failed. Please try again.";
+      setErrorWithShake(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [confirmEmail, completeLinkSignIn, handleAuthSuccess, setErrorWithShake]);
 
-    // ── Resend magic link ─────────────────────────────────────────────────────
-    const handleResend = useCallback(async () => {
-      if (resendCooldown > 0 || loading) return;
-      setLoading(true);
-      setError("");
-      try {
-        await sendMagicLink(email);
-        startCooldown();
-      } catch (err: unknown) {
-        setErrorWithShake(
-          err instanceof Error ? err.message : "Failed to resend link.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, [resendCooldown, loading, sendMagicLink, email, startCooldown, setErrorWithShake]);
+  const btnBottom =
+    kbOffset > 0
+      ? `${kbOffset + 16}px`
+      : "calc(env(safe-area-inset-bottom, 16px) + 16px)";
 
-    // ── Back to email step ────────────────────────────────────────────────────
-    const handleBack = useCallback(() => {
-      setStep("email");
-      setError("");
-      sessionStorage.setItem(SS_STEP, "email");
-      setTimeout(() => emailRef.current?.focus(), 80);
-    }, []);
+  const panelBase = "absolute inset-0 flex flex-col items-center";
 
-    // ── Cross-device: confirm email then complete link sign-in ────────────────
-    const [confirmEmail, setConfirmEmail] = useState("");
-
-    const handleCompleteLinkSignIn = useCallback(async () => {
-      const trimmed = confirmEmail.trim().toLowerCase();
-      if (!trimmed) {
-        setErrorWithShake("Please enter your email address.");
-        return;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-        setErrorWithShake("Please enter a valid email address.");
-        return;
-      }
-      setLoading(true);
-      setError("");
-      try {
-        await completeLinkSignIn(trimmed);
-        clearAuthSession();
-        onSuccess(redirectAfter);
-      } catch (err: unknown) {
-        const message =
-          err instanceof FirebaseError
-            ? "This link has expired or is invalid. Please request a new one."
-            : err instanceof Error
-              ? err.message
-              : "Sign-in failed. Please try again.";
-        setErrorWithShake(message);
-      } finally {
-        setLoading(false);
-      }
-    }, [confirmEmail, completeLinkSignIn, onSuccess, redirectAfter, setErrorWithShake]);
-
-    // ── Derived ───────────────────────────────────────────────────────────────
-    const btnBottom =
-      kbOffset > 0
-        ? `${kbOffset + 16}px`
-        : "calc(env(safe-area-inset-bottom, 16px) + 16px)";
-
-    // ── Shared panel styles ───────────────────────────────────────────────────
-    const panelBase = "absolute inset-0 flex flex-col items-center";
-
-    // ── Render ────────────────────────────────────────────────────────────────
-    return (
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div
+      className="fixed inset-0 z-50 overflow-hidden bg-white"
+      style={{
+        animation: closing
+          ? "authPageOut 0.32s cubic-bezier(0.4,0,0.2,1) both"
+          : "authPageIn 0.38s cubic-bezier(0.4,0,0.2,1) both",
+      }}
+      aria-label="Sign in"
+      role="main"
+      onAnimationEnd={handlePageAnimEnd}
+    >
+      {/* ── Step 1: Email ───────────────────────────────────────────────── */}
       <div
-        className="fixed inset-0 z-50 overflow-hidden bg-white"
+        className={panelBase}
+        aria-hidden={step !== "email"}
+        {...(step !== "email" ? { inert: "" } : {})}
         style={{
-          animation: closing
-            ? "authPageOut 0.32s cubic-bezier(0.4,0,0.2,1) both"
-            : "authPageIn 0.38s cubic-bezier(0.4,0,0.2,1) both",
+          transform: step === "email" ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
         }}
-        aria-label="Sign in"
-        role="main"
-        onAnimationEnd={handlePageAnimEnd}
       >
-        {/* ── Step 1: Email ───────────────────────────────────────────────── */}
-        <div
-          className={panelBase}
-          aria-hidden={step !== "email"}
-          {...(step !== "email" ? { inert: "" } : {})}
-          style={{
-            transform: step === "email" ? "translateX(0)" : "translateX(-100%)",
-            transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-          }}
-        >
-          <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
-
-          <div className="flex w-full items-center px-5 pt-4">
-            <button
-              onClick={dismiss}
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#0C0C0C] transition-colors active:bg-black/[0.12]"
-              aria-label="Go back"
-            >
-              <BackChevron />
-            </button>
-          </div>
-
-          <div className="flex w-full flex-col items-center pt-10 pb-8">
-            <span
-              className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
-              aria-label="arc."
-            >
-              arc<span style={{ color: "#F5A623" }}>.</span>
-            </span>
-          </div>
-
-          <div className="w-full max-w-[360px] px-6">
-            <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
-              Welcome
-            </h1>
-            <p className="mt-1.5 text-[15px] leading-relaxed text-[#8C8C8C]">
-              Enter your email and we&apos;ll send you a secure sign-in link.
-              No password needed.
-            </p>
-          </div>
-
-          <div
-            className="mt-8 w-full max-w-[360px] px-6"
-            key={`shake-email-${shakeKey}`}
-            style={
-              error && step === "email"
-                ? { animation: "authShake 0.35s ease" }
-                : undefined
-            }
+        <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
+        <div className="flex w-full items-center px-5 pt-4">
+          <button
+            onClick={dismiss}
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#0C0C0C] transition-colors active:bg-black/[0.12]"
+            aria-label="Go back"
           >
-            <input
-              ref={emailRef}
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              autoFocus={step === "email"}
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSendMagicLink();
-                }
-              }}
-              placeholder="you@example.com"
-              aria-label="Email address"
-              aria-invalid={!!error && step === "email"}
-              aria-describedby={
-                error && step === "email" ? "email-error" : undefined
-              }
-              className="w-full rounded-2xl border bg-white px-4 py-[15px] text-[16px] text-[#0C0C0C] outline-none placeholder:text-[#ABABAB]"
-              style={{
-                borderColor: error && step === "email" ? "#EF4444" : "#EBEBEB",
-                transition: "border-color 0.2s, box-shadow 0.2s",
-              }}
-              onFocus={(e) => {
-                (e.currentTarget as HTMLInputElement).style.borderColor = "#6366F1";
-                (e.currentTarget as HTMLInputElement).style.boxShadow =
-                  "0 0 0 3px rgba(99,102,241,0.12)";
-              }}
-              onBlur={(e) => {
-                (e.currentTarget as HTMLInputElement).style.borderColor =
-                  error && step === "email" ? "#EF4444" : "#EBEBEB";
-                (e.currentTarget as HTMLInputElement).style.boxShadow = "none";
-              }}
-            />
-            {error && step === "email" && (
-              <p
-                id="email-error"
-                className="mt-2 text-[13px] text-[#EF4444]"
-                role="alert"
-              >
-                {error}
-              </p>
-            )}
-          </div>
-
-          {/* CTA — absolute within panel, lifts with keyboard */}
-          <div
-            className="absolute left-0 right-0 px-6"
-            style={{
-              bottom: btnBottom,
-              transition: "bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
-            }}
-          >
-            <button
-              onClick={handleSendMagicLink}
-              disabled={loading}
-              aria-busy={loading}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[15px] text-[16px] font-bold text-white transition-opacity active:opacity-80 disabled:cursor-default disabled:opacity-75"
-              style={{
-                background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
-                boxShadow: "0 4px 20px rgba(99,102,241,0.32)",
-              }}
-            >
-              {loading ? (
-                <>
-                  <Spinner />
-                  <span>Sending link…</span>
-                </>
-              ) : (
-                "Send magic link"
-              )}
-            </button>
-          </div>
+            <BackChevron />
+          </button>
         </div>
-
-        {/* ── Step 2: Sent (check inbox) ──────────────────────────────────── */}
+        <div className="flex w-full flex-col items-center pt-10 pb-8">
+          <span
+            className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
+            aria-label="arc."
+          >
+            arc<span style={{ color: "#F5A623" }}>.</span>
+          </span>
+        </div>
+        <div className="w-full max-w-[360px] px-6">
+          <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
+            Welcome
+          </h1>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-[#8C8C8C]">
+            Enter your email and we&apos;ll send you a secure sign-in link. No
+            password needed.
+          </p>
+        </div>
         <div
-          className={panelBase}
-          aria-hidden={step !== "sent"}
-          {...(step !== "sent" ? { inert: "" } : {})}
-          style={{
-            transform: step === "sent" ? "translateX(0)" : "translateX(100%)",
-            transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-          }}
+          className="mt-8 w-full max-w-[360px] px-6"
+          key={`shake-email-${shakeKey}`}
+          style={
+            error && step === "email"
+              ? { animation: "authShake 0.35s ease" }
+              : undefined
+          }
         >
-          <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
-
-          <div className="flex w-full items-center px-5 pt-4">
-            <button
-              onClick={handleBack}
-              aria-label="Back to email"
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#0C0C0C] transition-colors active:bg-black/[0.12]"
-            >
-              <BackChevron />
-            </button>
-          </div>
-
-          <div className="flex w-full flex-col items-center pt-10 pb-8">
-            <span
-              className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
-              aria-label="arc."
-            >
-              arc<span style={{ color: "#F5A623" }}>.</span>
-            </span>
-          </div>
-
-          <div className="flex w-full flex-col items-center px-6">
-            <MailIcon />
-          </div>
-
-          <div className="mt-6 w-full max-w-[360px] px-6">
-            <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
-              Check your inbox
-            </h1>
-            <p className="mt-2 text-[15px] leading-relaxed text-[#8C8C8C]">
-              We sent a magic link to{" "}
-              <span className="font-semibold text-[#0C0C0C]">{email}</span>.
-              Click it to sign in — no password needed.
-            </p>
-          </div>
-
-          <div className="mt-6 flex items-center gap-1">
-            <span className="text-[13px] text-[#8C8C8C]">
-              Didn&apos;t receive it?
-            </span>
-            <button
-              onClick={handleResend}
-              disabled={resendCooldown > 0 || loading}
-              className="cursor-pointer border-none bg-transparent text-[13px] font-semibold text-[#6366F1] transition-opacity disabled:cursor-default disabled:opacity-50"
-              aria-label={
-                resendCooldown > 0
-                  ? `Resend link in ${resendCooldown}s`
-                  : "Resend magic link"
+          <input
+            ref={emailRef}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoFocus={step === "email"}
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSendMagicLink();
               }
-            >
-              {resendCooldown > 0
-                ? `Resend in ${resendCooldown}s`
-                : "Resend link"}
-            </button>
-          </div>
-
-          <div className="mt-3">
-            <button
-              onClick={handleBack}
-              className="cursor-pointer border-none bg-transparent text-[13px] text-[#8C8C8C] underline underline-offset-2 transition-opacity active:opacity-60"
-            >
-              Wrong email? Go back
-            </button>
-          </div>
-
-          {/* iOS PWA note — Safari and the installed PWA have isolated storage,
-              so cross-tab auth state sync won't work. Guide the user explicitly. */}
-          {isIOSPWA && (
-            <div
-              className="mt-5 w-full max-w-[360px] px-6"
-            >
-              <div
-                className="rounded-2xl px-4 py-3"
-                style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)" }}
-              >
-                <p className="text-[12.5px] leading-relaxed text-[#6366F1]">
-                  <span className="font-semibold">On iPhone?</span> The link
-                  opens in Safari. After tapping it, switch back to this app —
-                  then tap below to check your sign-in status.
-                </p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="mt-2 cursor-pointer border-none bg-transparent text-[12.5px] font-bold text-[#6366F1] transition-opacity active:opacity-60"
-                >
-                  Check sign-in status →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {error && step === "sent" && (
+            }}
+            placeholder="you@example.com"
+            aria-label="Email address"
+            aria-invalid={!!error && step === "email"}
+            aria-describedby={
+              error && step === "email" ? "email-error" : undefined
+            }
+            className="w-full rounded-2xl border bg-white px-4 py-[15px] text-[16px] text-[#0C0C0C] outline-none placeholder:text-[#ABABAB]"
+            style={{
+              borderColor: error && step === "email" ? "#EF4444" : "#EBEBEB",
+              transition: "border-color 0.2s, box-shadow 0.2s",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#6366F1";
+              e.currentTarget.style.boxShadow =
+                "0 0 0 3px rgba(99,102,241,0.12)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor =
+                error && step === "email" ? "#EF4444" : "#EBEBEB";
+              e.currentTarget.style.boxShadow = "none";
+            }}
+          />
+          {error && step === "email" && (
             <p
-              className="mt-3 text-center text-[13px] text-[#EF4444]"
+              id="email-error"
+              className="mt-2 text-[13px] text-[#EF4444]"
               role="alert"
             >
               {error}
             </p>
           )}
         </div>
-
-        {/* ── Step 3: Confirm link (cross-device) ─────────────────────────── */}
         <div
-          className={panelBase}
-          aria-hidden={step !== "confirm-link"}
-          {...(step !== "confirm-link" ? { inert: "" } : {})}
+          className="absolute left-0 right-0 px-6"
           style={{
-            transform:
-              step === "confirm-link" ? "translateX(0)" : "translateX(100%)",
-            transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
+            bottom: btnBottom,
+            transition: "bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
           }}
         >
-          <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
-
-          {/* No back button on confirm-link — user must confirm to dismiss */}
-          <div className="flex w-full flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+64px)] pb-8">
-            <span
-              className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
-              aria-label="arc."
-            >
-              arc<span style={{ color: "#F5A623" }}>.</span>
-            </span>
-          </div>
-
-          <div className="w-full max-w-[360px] px-6">
-            <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
-              Confirm your email
-            </h1>
-            <p className="mt-1.5 text-[15px] leading-relaxed text-[#8C8C8C]">
-              Enter the email you used to request the magic link.
-            </p>
-          </div>
-
-          <div
-            className="mt-8 w-full max-w-[360px] px-6"
-            key={`shake-confirm-${shakeKey}`}
-            style={
-              error && step === "confirm-link"
-                ? { animation: "authShake 0.35s ease" }
-                : undefined
-            }
-          >
-            <input
-              ref={confirmEmailRef}
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              value={confirmEmail}
-              onChange={(e) => {
-                setConfirmEmail(e.target.value);
-                setError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleCompleteLinkSignIn();
-                }
-              }}
-              placeholder="you@example.com"
-              aria-label="Email address"
-              aria-invalid={!!error && step === "confirm-link"}
-              aria-describedby={
-                error && step === "confirm-link" ? "confirm-email-error" : undefined
-              }
-              className="w-full rounded-2xl border bg-white px-4 py-[15px] text-[16px] text-[#0C0C0C] outline-none placeholder:text-[#ABABAB]"
-              style={{
-                borderColor:
-                  error && step === "confirm-link" ? "#EF4444" : "#EBEBEB",
-                transition: "border-color 0.2s, box-shadow 0.2s",
-              }}
-              onFocus={(e) => {
-                (e.currentTarget as HTMLInputElement).style.borderColor = "#6366F1";
-                (e.currentTarget as HTMLInputElement).style.boxShadow =
-                  "0 0 0 3px rgba(99,102,241,0.12)";
-              }}
-              onBlur={(e) => {
-                (e.currentTarget as HTMLInputElement).style.borderColor =
-                  error && step === "confirm-link" ? "#EF4444" : "#EBEBEB";
-                (e.currentTarget as HTMLInputElement).style.boxShadow = "none";
-              }}
-            />
-            {error && step === "confirm-link" && (
-              <p
-                id="confirm-email-error"
-                className="mt-2 text-[13px] text-[#EF4444]"
-                role="alert"
-              >
-                {error}
-              </p>
-            )}
-          </div>
-
-          {/* CTA — absolute within panel, lifts with keyboard */}
-          <div
-            className="absolute left-0 right-0 px-6"
+          <button
+            onClick={handleSendMagicLink}
+            disabled={loading}
+            aria-busy={loading}
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[15px] text-[16px] font-bold text-white transition-opacity active:opacity-80 disabled:cursor-default disabled:opacity-75"
             style={{
-              bottom: btnBottom,
-              transition: "bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
+              background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
+              boxShadow: "0 4px 20px rgba(99,102,241,0.32)",
             }}
           >
-            <button
-              onClick={handleCompleteLinkSignIn}
-              disabled={loading}
-              aria-busy={loading}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[15px] text-[16px] font-bold text-white transition-opacity active:opacity-80 disabled:cursor-default disabled:opacity-75"
+            {loading ? (
+              <>
+                <Spinner />
+                <span>Sending link…</span>
+              </>
+            ) : (
+              "Send magic link"
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Step 2: Sent ────────────────────────────────────────────────── */}
+      <div
+        className={panelBase}
+        aria-hidden={step !== "sent"}
+        {...(step !== "sent" ? { inert: "" } : {})}
+        style={{
+          transform: step === "sent" ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
+        }}
+      >
+        <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
+        <div className="flex w-full items-center px-5 pt-4">
+          <button
+            onClick={handleBack}
+            aria-label="Back to email"
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-none bg-black/[0.06] text-[#0C0C0C] transition-colors active:bg-black/[0.12]"
+          >
+            <BackChevron />
+          </button>
+        </div>
+        <div className="flex w-full flex-col items-center pt-10 pb-8">
+          <span
+            className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
+            aria-label="arc."
+          >
+            arc<span style={{ color: "#F5A623" }}>.</span>
+          </span>
+        </div>
+        <div className="flex w-full flex-col items-center px-6">
+          <MailIcon />
+        </div>
+        <div className="mt-6 w-full max-w-[360px] px-6">
+          <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
+            Check your inbox
+          </h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-[#8C8C8C]">
+            We sent a magic link to{" "}
+            <span className="font-semibold text-[#0C0C0C]">{email}</span>. Click
+            it to sign in — no password needed.
+          </p>
+        </div>
+        <div className="mt-6 flex items-center gap-1">
+          <span className="text-[13px] text-[#8C8C8C]">
+            Didn&apos;t receive it?
+          </span>
+          <button
+            onClick={handleResend}
+            disabled={resendCooldown > 0 || loading}
+            className="cursor-pointer border-none bg-transparent text-[13px] font-semibold text-[#6366F1] transition-opacity disabled:cursor-default disabled:opacity-50"
+          >
+            {resendCooldown > 0
+              ? `Resend in ${resendCooldown}s`
+              : "Resend link"}
+          </button>
+        </div>
+        <div className="mt-3">
+          <button
+            onClick={handleBack}
+            className="cursor-pointer border-none bg-transparent text-[13px] text-[#8C8C8C] underline underline-offset-2 transition-opacity active:opacity-60"
+          >
+            Wrong email? Go back
+          </button>
+        </div>
+        {isIOSPWA && (
+          <div className="mt-5 w-full max-w-[360px] px-6">
+            <div
+              className="rounded-2xl px-4 py-3"
               style={{
-                background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
-                boxShadow: "0 4px 20px rgba(99,102,241,0.32)",
+                background: "rgba(99,102,241,0.06)",
+                border: "1px solid rgba(99,102,241,0.15)",
               }}
             >
-              {loading ? (
-                <>
-                  <Spinner />
-                  <span>Signing in…</span>
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* ── Step 4: Signed-in (cross-tab confirmation) ──────────────────── */}
-        {/* Shown when another tab/context completed the magic-link sign-in.    */}
-        {/* We don't auto-navigate because this may be a background tab the     */}
-        {/* user no longer needs.                                                */}
-        <div
-          className={panelBase}
-          aria-hidden={step !== "signed-in"}
-          {...(step !== "signed-in" ? { inert: "" } : {})}
-          style={{
-            transform:
-              step === "signed-in" ? "translateX(0)" : "translateX(100%)",
-            transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-          }}
-        >
-          <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
-
-          <div className="flex w-full flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+56px)] pb-8">
-            <span
-              className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
-              aria-label="arc."
-            >
-              arc<span style={{ color: "#F5A623" }}>.</span>
-            </span>
-          </div>
-
-          {/* Success icon */}
-          <div className="flex flex-col items-center">
-            <div
-              className="flex h-[72px] w-[72px] items-center justify-center rounded-full"
-              style={{ background: "rgba(16,185,129,0.10)" }}
-            >
-              <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
-                <circle cx="18" cy="18" r="17" stroke="#10B981" strokeWidth="2" />
-                <path
-                  d="M10 18l6 6 10-12"
-                  stroke="#10B981"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <p className="text-[12.5px] leading-relaxed text-[#6366F1]">
+                <span className="font-semibold">On iPhone?</span> The link opens
+                in Safari. After tapping it, switch back to this app — then tap
+                below to check your sign-in status.
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-2 cursor-pointer border-none bg-transparent text-[12.5px] font-bold text-[#6366F1] transition-opacity active:opacity-60"
+              >
+                Check sign-in status →
+              </button>
             </div>
           </div>
+        )}
+        {error && step === "sent" && (
+          <p
+            className="mt-3 text-center text-[13px] text-[#EF4444]"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
+      </div>
 
-          <div className="mt-6 w-full max-w-[360px] px-6 text-center">
-            <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
-              You&apos;re signed in!
-            </h1>
-            <p className="mt-2 text-[15px] leading-relaxed text-[#8C8C8C]">
-              Sign-in was completed in another tab. You can close this tab, or
-              continue here.
-            </p>
-          </div>
-
-          {/* CTAs */}
-          <div
-            className="absolute left-0 right-0 px-6"
+      {/* ── Step 3: Confirm link (cross-device) ─────────────────────────── */}
+      <div
+        className={panelBase}
+        aria-hidden={step !== "confirm-link"}
+        {...(step !== "confirm-link" ? { inert: "" } : {})}
+        style={{
+          transform:
+            step === "confirm-link" ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
+        }}
+      >
+        <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
+        <div className="flex w-full flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+64px)] pb-8">
+          <span
+            className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
+            aria-label="arc."
+          >
+            arc<span style={{ color: "#F5A623" }}>.</span>
+          </span>
+        </div>
+        <div className="w-full max-w-[360px] px-6">
+          <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
+            Confirm your email
+          </h1>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-[#8C8C8C]">
+            Enter the email you used to request the magic link.
+          </p>
+        </div>
+        <div
+          className="mt-8 w-full max-w-[360px] px-6"
+          key={`shake-confirm-${shakeKey}`}
+          style={
+            error && step === "confirm-link"
+              ? { animation: "authShake 0.35s ease" }
+              : undefined
+          }
+        >
+          <input
+            ref={confirmEmailRef}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            value={confirmEmail}
+            onChange={(e) => {
+              setConfirmEmail(e.target.value);
+              setError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCompleteLinkSignIn();
+              }
+            }}
+            placeholder="you@example.com"
+            aria-label="Email address"
+            aria-invalid={!!error && step === "confirm-link"}
+            aria-describedby={
+              error && step === "confirm-link"
+                ? "confirm-email-error"
+                : undefined
+            }
+            className="w-full rounded-2xl border bg-white px-4 py-[15px] text-[16px] text-[#0C0C0C] outline-none placeholder:text-[#ABABAB]"
             style={{
-              bottom: btnBottom,
-              transition: "bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
+              borderColor:
+                error && step === "confirm-link" ? "#EF4444" : "#EBEBEB",
+              transition: "border-color 0.2s, box-shadow 0.2s",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#6366F1";
+              e.currentTarget.style.boxShadow =
+                "0 0 0 3px rgba(99,102,241,0.12)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor =
+                error && step === "confirm-link" ? "#EF4444" : "#EBEBEB";
+              e.currentTarget.style.boxShadow = "none";
+            }}
+          />
+          {error && step === "confirm-link" && (
+            <p
+              id="confirm-email-error"
+              className="mt-2 text-[13px] text-[#EF4444]"
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+        </div>
+        <div
+          className="absolute left-0 right-0 px-6"
+          style={{
+            bottom: btnBottom,
+            transition: "bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
+          }}
+        >
+          <button
+            onClick={handleCompleteLinkSignIn}
+            disabled={loading}
+            aria-busy={loading}
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[15px] text-[16px] font-bold text-white transition-opacity active:opacity-80 disabled:cursor-default disabled:opacity-75"
+            style={{
+              background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
+              boxShadow: "0 4px 20px rgba(99,102,241,0.32)",
             }}
           >
-            <button
-              onClick={() => {
-                clearAuthSession();
-                onSuccess(redirectAfter);
-              }}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[15px] text-[16px] font-bold text-white transition-opacity active:opacity-80"
-              style={{
-                background: "linear-gradient(135deg,#10B981,#059669)",
-                boxShadow: "0 4px 20px rgba(16,185,129,0.28)",
-              }}
+            {loading ? (
+              <>
+                <Spinner />
+                <span>Signing in…</span>
+              </>
+            ) : (
+              "Sign in"
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Step 4: Signed-in (cross-tab confirmation) ──────────────────── */}
+      <div
+        className={panelBase}
+        aria-hidden={step !== "signed-in"}
+        {...(step !== "signed-in" ? { inert: "" } : {})}
+        style={{
+          transform:
+            step === "signed-in" ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
+        }}
+      >
+        <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
+        <div className="flex w-full flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+56px)] pb-8">
+          <span
+            className="select-none font-logo text-[40px] font-black leading-none tracking-[-2.5px] text-[#0C0C0C]"
+            aria-label="arc."
+          >
+            arc<span style={{ color: "#F5A623" }}>.</span>
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <div
+            className="flex h-[72px] w-[72px] items-center justify-center rounded-full"
+            style={{ background: "rgba(16,185,129,0.10)" }}
+          >
+            <svg
+              width="36"
+              height="36"
+              viewBox="0 0 36 36"
+              fill="none"
+              aria-hidden="true"
             >
-              Continue here
-            </button>
-            <button
-              onClick={() => window.close()}
-              className="mt-3 w-full cursor-pointer border-none bg-transparent py-2 text-[14px] text-[#8C8C8C] transition-opacity active:opacity-60"
-            >
-              Close this tab
-            </button>
+              <circle cx="18" cy="18" r="17" stroke="#10B981" strokeWidth="2" />
+              <path
+                d="M10 18l6 6 10-12"
+                stroke="#10B981"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
         </div>
+        <div className="mt-6 w-full max-w-[360px] px-6 text-center">
+          <h1 className="text-[26px] font-bold leading-tight text-[#0C0C0C]">
+            You&apos;re signed in!
+          </h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-[#8C8C8C]">
+            Sign-in was completed in another tab. You can close this tab, or
+            continue here.
+          </p>
+        </div>
+        <div
+          className="absolute left-0 right-0 px-6"
+          style={{
+            bottom: btnBottom,
+            transition: "bottom 0.28s cubic-bezier(0.4,0,0.2,1)",
+          }}
+        >
+          <button
+            onClick={handleAuthSuccess}
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[15px] text-[16px] font-bold text-white transition-opacity active:opacity-80"
+            style={{
+              background: "linear-gradient(135deg,#10B981,#059669)",
+              boxShadow: "0 4px 20px rgba(16,185,129,0.28)",
+            }}
+          >
+            Continue here
+          </button>
+          <button
+            onClick={() => window.close()}
+            className="mt-3 w-full cursor-pointer border-none bg-transparent py-2 text-[14px] text-[#8C8C8C] transition-opacity active:opacity-60"
+          >
+            Close this tab
+          </button>
+        </div>
+      </div>
 
-        <style>{`
+      <style>{`
         @keyframes authPageIn  { from { opacity:0; transform:translateY(100%); } to { opacity:1; transform:translateY(0); } }
         @keyframes authPageOut { from { opacity:1; transform:translateY(0); }   to { opacity:0; transform:translateY(100%); } }
         @keyframes authShake   { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
       `}</style>
-      </div>
-    );
-  },
-);
-
-AuthPage.displayName = "AuthPage";
+    </div>
+  );
+});

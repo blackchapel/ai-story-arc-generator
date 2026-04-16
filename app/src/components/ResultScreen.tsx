@@ -1,15 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams, useLocation } from "react-router";
 import { fetchOutput, toggleShare, regenerateArc, deleteArc } from "@/apis";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthStore } from "@/store/authStore";
+import { useArcStore } from "@/store/arcStore";
 import type { NewsArticle } from "@/types";
-
-interface ResultScreenProps {
-  jobId: string;
-  htmlUrl?: string;
-  onBack: () => void;
-  onRegenerate: (jobId: string) => void;
-  onDeleted: () => void;
-}
 
 // ── Icon primitives ───────────────────────────────────────────────────────────
 
@@ -166,11 +160,21 @@ const Spinner = ({ color = "currentColor" }: { color?: string }) => (
 
 // ── Sheet backdrop + panel ────────────────────────────────────────────────────
 
-function SheetBackdrop({ onClose }: { onClose: () => void }) {
+function SheetBackdrop({
+  onClose,
+  closing,
+}: {
+  onClose: () => void;
+  closing: boolean;
+}) {
   return (
     <div
       className="fixed inset-0 z-40 bg-black/30"
-      style={{ animation: "fadeIn 0.2s ease both" }}
+      style={{
+        animation: closing
+          ? "fadeOut 0.22s ease both"
+          : "fadeIn 0.2s ease both",
+      }}
       onClick={onClose}
       aria-hidden="true"
     />
@@ -180,20 +184,109 @@ function SheetBackdrop({ onClose }: { onClose: () => void }) {
 interface SheetPanelProps {
   children: React.ReactNode;
   label: string;
+  closing: boolean;
+  onCloseAnimEnd: () => void;
 }
 
-function SheetPanel({ children, label }: SheetPanelProps) {
+function SheetPanel({
+  children,
+  label,
+  closing,
+  onCloseAnimEnd,
+}: SheetPanelProps) {
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [dragClosing, setDragClosing] = useState(false);
+  const startY = useRef(0);
+  const startTime = useRef(0);
+  const hasDragged = useRef(false);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (closing || e.nativeEvent.offsetY > 48) return;
+      startY.current = e.clientY;
+      startTime.current = Date.now();
+      hasDragged.current = false;
+      setDragging(true);
+    },
+    [closing],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging) return;
+      const delta = Math.max(0, e.clientY - startY.current);
+      if (!hasDragged.current) {
+        if (delta < 6) return;
+        hasDragged.current = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      setDragY(delta);
+    },
+    [dragging],
+  );
+
+  const handlePointerUp = useCallback(() => {
+    if (!dragging) return;
+    const delta = dragY;
+    const elapsed = Math.max(1, Date.now() - startTime.current);
+    const velocity = delta / elapsed;
+    setDragging(false);
+    hasDragged.current = false;
+    if (delta > 80 || velocity > 0.4) {
+      setDragClosing(true);
+    } else {
+      setDragY(0);
+    }
+  }, [dragging, dragY]);
+
+  const handleAnimOrTransitionEnd = useCallback(() => {
+    if (dragClosing) {
+      setDragY(0);
+      setDragClosing(false);
+      onCloseAnimEnd();
+    } else if (closing) {
+      onCloseAnimEnd();
+    }
+  }, [dragClosing, closing, onCloseAnimEnd]);
+
+  const panelStyle: React.CSSProperties = dragClosing
+    ? {
+        bottom: 0,
+        paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
+        transform: "translateY(110%)",
+        transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+      }
+    : dragging || dragY > 0
+      ? {
+          bottom: 0,
+          paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
+          transform: `translateY(${dragY}px)`,
+          transition: dragging
+            ? "none"
+            : "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)",
+        }
+      : {
+          bottom: 0,
+          paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
+          animation: closing
+            ? "sheetDown 0.28s cubic-bezier(0.4,0,0.2,1) both"
+            : "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
+        };
+
   return (
     <div
       className="fixed left-0 right-0 z-50 rounded-t-3xl bg-white px-5 pt-4"
-      style={{
-        bottom: 0,
-        paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
-        animation: "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
-      }}
+      style={panelStyle}
       role="dialog"
       aria-modal="true"
       aria-label={label}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onAnimationEnd={handleAnimOrTransitionEnd}
+      onTransitionEnd={handleAnimOrTransitionEnd}
     >
       {/* Drag handle */}
       <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#EBEBEB]" />
@@ -204,605 +297,630 @@ function SheetPanel({ children, label }: SheetPanelProps) {
 
 // ── ResultScreen ──────────────────────────────────────────────────────────────
 
-export const ResultScreen = memo<ResultScreenProps>(
-  ({ jobId, htmlUrl: initialHtmlUrl, onBack, onRegenerate, onDeleted }) => {
-    const { user } = useAuth();
+export const ResultScreen = memo(function ResultScreen() {
+  const { jobId = "" } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const initialHtmlUrl = (location.state as { htmlUrl?: string } | null)
+    ?.htmlUrl;
 
-    const [loaded, setLoaded] = useState(false);
-    const [htmlUrl, setHtmlUrl] = useState<string | null>(
-      initialHtmlUrl ?? null,
-    );
-    const [arc, setArc] = useState<NewsArticle | null>(null);
-    const [fetchError, setFetchError] = useState(false);
-    const [copied, setCopied] = useState(false);
-    const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const { refreshArcs } = useArcStore.getState();
 
-    // ── Sheet / dialog visibility ─────────────────────────────────────────────
-    type Sheet =
-      | "none"
-      | "menu"
-      | "confirm-disable"
-      | "confirm-regen"
-      | "confirm-delete";
-    const [sheet, setSheet] = useState<Sheet>("none");
+  const [loaded, setLoaded] = useState(false);
+  const [htmlUrl, setHtmlUrl] = useState<string | null>(initialHtmlUrl ?? null);
+  const [arc, setArc] = useState<NewsArticle | null>(null);
+  const [fetchError, setFetchError] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // ── Action loading states ─────────────────────────────────────────────────
-    const [sharingLoading, setSharingLoading] = useState(false);
-    // null = idle, "replace" = replace in-flight, "keep" = keep-both in-flight
-    const [regenMode, setRegenMode] = useState<"replace" | "keep" | null>(null);
-    const regenLoading = regenMode !== null;
-    const [deleteLoading, setDeleteLoading] = useState(false);
+  // ── Sheet / dialog visibility ─────────────────────────────────────────────
+  type Sheet =
+    | "none"
+    | "menu"
+    | "confirm-disable"
+    | "confirm-regen"
+    | "confirm-delete";
+  const [sheet, setSheet] = useState<Sheet>("none");
 
-    const isOwner = !!user && !!arc && arc.user_id === user.id;
+  // ── Action loading states ─────────────────────────────────────────────────
+  const [sharingLoading, setSharingLoading] = useState(false);
+  // null = idle, "replace" = replace in-flight, "keep" = keep-both in-flight
+  const [regenMode, setRegenMode] = useState<"replace" | "keep" | null>(null);
+  const regenLoading = regenMode !== null;
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
-    // ── Fetch arc details ─────────────────────────────────────────────────────
-    useEffect(() => {
-      if (!initialHtmlUrl) return;
-      fetchOutput(jobId)
-        .then(setArc)
-        .catch(() => {});
-    }, [jobId, initialHtmlUrl]);
+  const isOwner = !!user && !!arc && arc.user_id === user.id;
 
-    useEffect(() => {
-      if (initialHtmlUrl) return;
-      const ctrl = new AbortController();
-      fetchOutput(jobId)
-        .then((a) => {
-          if (!ctrl.signal.aborted) {
-            setArc(a);
-            setHtmlUrl(a.html ?? null);
-          }
-        })
-        .catch(() => {
-          if (!ctrl.signal.aborted) setFetchError(true);
-        });
-      return () => ctrl.abort();
-    }, [jobId, initialHtmlUrl]);
+  // ── Fetch arc details ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!initialHtmlUrl) return;
+    fetchOutput(jobId)
+      .then(setArc)
+      .catch(() => {});
+  }, [jobId, initialHtmlUrl]);
 
-    // ── Copy link ─────────────────────────────────────────────────────────────
-    const handleCopyLink = useCallback(async () => {
-      if (!arc?.share_token) return;
-      const url = `${window.location.origin}/shared/${arc.share_token}`;
-      await navigator.clipboard?.writeText(url);
-      setCopied(true);
+  useEffect(() => {
+    if (initialHtmlUrl) return;
+    const ctrl = new AbortController();
+    fetchOutput(jobId)
+      .then((a) => {
+        if (!ctrl.signal.aborted) {
+          setArc(a);
+          setHtmlUrl(a.html ?? null);
+        }
+      })
+      .catch(() => {
+        if (!ctrl.signal.aborted) setFetchError(true);
+      });
+    return () => ctrl.abort();
+  }, [jobId, initialHtmlUrl]);
+
+  // ── Copy link ─────────────────────────────────────────────────────────────
+  const handleCopyLink = useCallback(async () => {
+    if (!arc?.share_token) return;
+    const url = `${window.location.origin}/shared/${arc.share_token}`;
+    await navigator.clipboard?.writeText(url);
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+  }, [arc]);
+
+  useEffect(
+    () => () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
-      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
-    }, [arc]);
+    },
+    [],
+  );
 
-    useEffect(
-      () => () => {
-        if (copiedTimer.current) clearTimeout(copiedTimer.current);
-      },
-      [],
-    );
-
-    // ── Enable sharing ────────────────────────────────────────────────────────
-    const handleEnableShare = useCallback(async () => {
-      if (!arc || sharingLoading) return;
-      setSharingLoading(true);
-      setSheet("none");
-      try {
-        const res = await toggleShare(arc.id);
-        const updated = {
-          ...arc,
-          is_shared: res.is_shared,
-          share_token: res.share_token ?? undefined,
-        };
-        setArc(updated);
-        if (res.is_shared && res.share_token) {
-          const url = `${window.location.origin}/shared/${res.share_token}`;
-          if (navigator.share) {
-            navigator
-              .share({ title: arc.title ?? "arc.", url })
-              .catch(() => {});
-          } else {
-            await navigator.clipboard?.writeText(url);
-            setCopied(true);
-            if (copiedTimer.current) clearTimeout(copiedTimer.current);
-            copiedTimer.current = setTimeout(() => setCopied(false), 2000);
-          }
+  // ── Enable sharing ────────────────────────────────────────────────────────
+  const handleEnableShare = useCallback(async () => {
+    if (!arc || sharingLoading) return;
+    setSharingLoading(true);
+    setSheet("none");
+    try {
+      const res = await toggleShare(arc.id);
+      const updated = {
+        ...arc,
+        is_shared: res.is_shared,
+        share_token: res.share_token ?? undefined,
+      };
+      setArc(updated);
+      if (res.is_shared && res.share_token) {
+        const url = `${window.location.origin}/shared/${res.share_token}`;
+        if (navigator.share) {
+          navigator.share({ title: arc.title ?? "arc.", url }).catch(() => {});
+        } else {
+          await navigator.clipboard?.writeText(url);
+          setCopied(true);
+          if (copiedTimer.current) clearTimeout(copiedTimer.current);
+          copiedTimer.current = setTimeout(() => setCopied(false), 2000);
         }
-      } catch {
-        /* silent */
-      } finally {
-        setSharingLoading(false);
       }
-    }, [arc, sharingLoading]);
+    } catch {
+      /* silent */
+    } finally {
+      setSharingLoading(false);
+    }
+  }, [arc, sharingLoading]);
 
-    // ── Disable sharing (after confirmation) ─────────────────────────────────
-    const handleDisableShare = useCallback(async () => {
-      if (!arc || sharingLoading) return;
+  // ── Disable sharing (after confirmation) ─────────────────────────────────
+  const handleDisableShare = useCallback(async () => {
+    if (!arc || sharingLoading) return;
+    setSheet("none");
+    setSharingLoading(true);
+    try {
+      const res = await toggleShare(arc.id);
+      setArc((prev) =>
+        prev
+          ? {
+              ...prev,
+              is_shared: res.is_shared,
+              share_token: res.share_token ?? undefined,
+            }
+          : prev,
+      );
+    } catch {
+      /* silent */
+    } finally {
+      setSharingLoading(false);
+    }
+  }, [arc, sharingLoading]);
+
+  // ── Regenerate ────────────────────────────────────────────────────────────
+  const handleRegenerate = useCallback(
+    async (mode: "replace" | "keep") => {
+      if (!arc || regenLoading) return;
       setSheet("none");
-      setSharingLoading(true);
+      setRegenMode(mode);
       try {
-        const res = await toggleShare(arc.id);
-        setArc((prev) =>
-          prev
-            ? {
-                ...prev,
-                is_shared: res.is_shared,
-                share_token: res.share_token ?? undefined,
-              }
-            : prev,
-        );
+        const { job_id } = await regenerateArc(arc.id, mode === "replace");
+        navigate(`/process/${job_id}`, { replace: true });
       } catch {
         /* silent */
       } finally {
-        setSharingLoading(false);
+        setRegenMode(null);
       }
-    }, [arc, sharingLoading]);
+    },
+    [arc, regenLoading, navigate],
+  );
 
-    // ── Regenerate ────────────────────────────────────────────────────────────
-    const handleRegenerate = useCallback(
-      async (mode: "replace" | "keep") => {
-        if (!arc || regenLoading) return;
-        setSheet("none");
-        setRegenMode(mode);
-        try {
-          const { job_id } = await regenerateArc(arc.id, mode === "replace");
-          onRegenerate(job_id);
-        } catch {
-          /* silent */
-        } finally {
-          setRegenMode(null);
-        }
-      },
-      [arc, regenLoading, onRegenerate],
-    );
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = useCallback(async () => {
+    if (!arc || deleteLoading) return;
+    setSheet("none");
+    setDeleteLoading(true);
+    try {
+      await deleteArc(arc.id);
+      refreshArcs();
+      navigate("/", { replace: true });
+    } catch {
+      /* silent */
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [arc, deleteLoading, refreshArcs, navigate]);
 
-    // ── Delete ────────────────────────────────────────────────────────────────
-    const handleDelete = useCallback(async () => {
-      if (!arc || deleteLoading) return;
-      setSheet("none");
-      setDeleteLoading(true);
-      try {
-        await deleteArc(arc.id);
-        onDeleted();
-      } catch {
-        /* silent */
-      } finally {
-        setDeleteLoading(false);
-      }
-    }, [arc, deleteLoading, onDeleted]);
+  const [sheetClosing, setSheetClosing] = useState(false);
+  const closeSheet = useCallback(() => setSheetClosing(true), []);
+  const onSheetClosed = useCallback(() => {
+    setSheet("none");
+    setSheetClosing(false);
+  }, []);
 
-    const closeSheet = useCallback(() => setSheet("none"), []);
-
-    // ── Render ────────────────────────────────────────────────────────────────
-    return (
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div
+      className="flex h-full w-full flex-col bg-white"
+      style={{
+        animation: "resultSlideUp 0.45s cubic-bezier(0.34,1.06,0.64,1) both",
+      }}
+    >
+      {/* ── Top bar ───────────────────────────────────────────────────────── */}
       <div
-        className="flex h-full w-full flex-col bg-white"
-        style={{
-          animation: "resultSlideUp 0.45s cubic-bezier(0.34,1.06,0.64,1) both",
-        }}
+        className="relative flex h-[52px] flex-shrink-0 items-center px-4"
+        style={{ borderBottom: "1px solid #EBEBEB" }}
       >
-        {/* ── Top bar ───────────────────────────────────────────────────────── */}
         <div
-          className="relative flex h-[52px] flex-shrink-0 items-center px-4"
-          style={{ borderBottom: "1px solid #EBEBEB" }}
-        >
-          <div
-            className="absolute bottom-0 left-0 right-0 h-[2px] opacity-60"
-            style={{
-              background:
-                "linear-gradient(90deg,#6366F1 0%,#EC4899 40%,#F5A623 70%,#10B981 100%)",
-            }}
-            aria-hidden="true"
-          />
+          className="absolute bottom-0 left-0 right-0 h-[2px] opacity-60"
+          style={{
+            background:
+              "linear-gradient(90deg,#6366F1 0%,#EC4899 40%,#F5A623 70%,#10B981 100%)",
+          }}
+          aria-hidden="true"
+        />
 
-          {/* Left — back */}
-          <div className="flex flex-1 items-center">
-            <button
-              onClick={onBack}
-              className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2 text-[13px] font-semibold text-[#6366F1] transition-opacity active:opacity-60"
-              aria-label="Back"
+        {/* Left — back */}
+        <div className="flex flex-1 items-center">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2 text-[13px] font-semibold text-[#6366F1] transition-opacity active:opacity-60"
+            aria-label="Back"
+          >
+            <svg
+              width="7"
+              height="12"
+              viewBox="0 0 7 12"
+              fill="none"
+              aria-hidden="true"
             >
-              <svg
-                width="7"
-                height="12"
-                viewBox="0 0 7 12"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 1L1 6l5 5"
-                  stroke="#6366F1"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              <path
+                d="M6 1L1 6l5 5"
+                stroke="#6366F1"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Home
+          </button>
+        </div>
+
+        {/* Center — logo */}
+        <span className="flex-shrink-0 select-none font-logo text-[22px] font-black leading-none tracking-[-1.5px] text-[#0C0C0C]">
+          arc<span style={{ color: "#F5A623" }}>.</span>
+        </span>
+
+        {/* Right — copy link + more menu */}
+        <div className="flex flex-1 items-center justify-end gap-1.5">
+          {/* Copy link — only when shared */}
+          {isOwner && arc?.is_shared && (
+            <button
+              onClick={handleCopyLink}
+              className="flex h-8 flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none px-2.5 text-[12px] font-semibold transition-colors active:opacity-70"
+              style={{
+                background: copied
+                  ? "rgba(16,185,129,0.10)"
+                  : "rgba(99,102,241,0.08)",
+                color: copied ? "#10B981" : "#6366F1",
+              }}
+              aria-label={copied ? "Link copied!" : "Copy share link"}
+            >
+              <CopyIcon copied={copied} />
+              <span>{copied ? "Copied!" : "Copy link"}</span>
+            </button>
+          )}
+
+          {/* More options */}
+          {isOwner && arc && (
+            <button
+              onClick={() => setSheet("menu")}
+              disabled={sharingLoading || regenLoading || deleteLoading}
+              className="flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border-none bg-[#F5F5F5] text-[#0C0C0C] transition-colors active:bg-[#EDEDED] disabled:opacity-50"
+              aria-label="More options"
+            >
+              {sharingLoading || regenLoading || deleteLoading ? (
+                <Spinner />
+              ) : (
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 15 15"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle cx="7.5" cy="3" r="1.2" fill="currentColor" />
+                  <circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" />
+                  <circle cx="7.5" cy="12" r="1.2" fill="currentColor" />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Content ───────────────────────────────────────────────────────── */}
+      <div className="relative flex-1 overflow-hidden">
+        {(!htmlUrl || !loaded) && !fetchError && (
+          <div className="absolute inset-0 z-10 bg-white">
+            <div className="flex flex-col gap-4 p-5 pt-8">
+              {[80, 55, 90, 40, 70].map((w, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg"
+                  style={{
+                    height: i === 0 ? 180 : 16,
+                    width: `${w}%`,
+                    background:
+                      "linear-gradient(90deg,#F5F5F5 25%,#EDEDED 50%,#F5F5F5 75%)",
+                    backgroundSize: "800px 100%",
+                    animation: `shimmer 1.6s infinite ${i * 0.1}s`,
+                  }}
+                  aria-hidden="true"
                 />
-              </svg>
-              Home
+              ))}
+            </div>
+          </div>
+        )}
+
+        {fetchError && (
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+            <p className="text-[15px] font-semibold text-[#0C0C0C]">
+              Couldn't load this arc
+            </p>
+            <p className="text-[13px] text-[#8C8C8C]">
+              It may have been removed or you may not have access.
+            </p>
+            <button
+              onClick={() => navigate("/", { replace: true })}
+              className="mt-2 rounded-xl border-none bg-[#F5F5F5] px-5 py-2.5 text-[13px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
+            >
+              Go home
             </button>
           </div>
+        )}
 
-          {/* Center — logo */}
-          <span className="flex-shrink-0 select-none font-logo text-[22px] font-black leading-none tracking-[-1.5px] text-[#0C0C0C]">
-            arc<span style={{ color: "#F5A623" }}>.</span>
-          </span>
+        {htmlUrl && (
+          <iframe
+            src={htmlUrl}
+            onLoad={() => setLoaded(true)}
+            title="Your arc story"
+            className="h-full w-full border-none"
+            sandbox="allow-scripts allow-popups"
+            loading="eager"
+          />
+        )}
+      </div>
 
-          {/* Right — copy link + more menu */}
-          <div className="flex flex-1 items-center justify-end gap-1.5">
-            {/* Copy link — only when shared */}
-            {isOwner && arc?.is_shared && (
-              <button
-                onClick={handleCopyLink}
-                className="flex h-8 flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none px-2.5 text-[12px] font-semibold transition-colors active:opacity-70"
-                style={{
-                  background: copied
-                    ? "rgba(16,185,129,0.10)"
-                    : "rgba(99,102,241,0.08)",
-                  color: copied ? "#10B981" : "#6366F1",
-                }}
-                aria-label={copied ? "Link copied!" : "Copy share link"}
-              >
-                <CopyIcon copied={copied} />
-                <span>{copied ? "Copied!" : "Copy link"}</span>
-              </button>
-            )}
-
-            {/* More options */}
-            {isOwner && arc && (
-              <button
-                onClick={() => setSheet("menu")}
-                disabled={sharingLoading || regenLoading || deleteLoading}
-                className="flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border-none bg-[#F5F5F5] text-[#0C0C0C] transition-colors active:bg-[#EDEDED] disabled:opacity-50"
-                aria-label="More options"
-              >
-                {sharingLoading || regenLoading || deleteLoading ? (
-                  <Spinner />
-                ) : (
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 15 15"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <circle cx="7.5" cy="3" r="1.2" fill="currentColor" />
-                    <circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" />
-                    <circle cx="7.5" cy="12" r="1.2" fill="currentColor" />
-                  </svg>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ── Content ───────────────────────────────────────────────────────── */}
-        <div className="relative flex-1 overflow-hidden">
-          {(!htmlUrl || !loaded) && !fetchError && (
-            <div className="absolute inset-0 z-10 bg-white">
-              <div className="flex flex-col gap-4 p-5 pt-8">
-                {[80, 55, 90, 40, 70].map((w, i) => (
-                  <div
-                    key={i}
-                    className="rounded-lg"
-                    style={{
-                      height: i === 0 ? 180 : 16,
-                      width: `${w}%`,
-                      background:
-                        "linear-gradient(90deg,#F5F5F5 25%,#EDEDED 50%,#F5F5F5 75%)",
-                      backgroundSize: "800px 100%",
-                      animation: `shimmer 1.6s infinite ${i * 0.1}s`,
-                    }}
-                    aria-hidden="true"
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {fetchError && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <p className="text-[15px] font-semibold text-[#0C0C0C]">
-                Couldn't load this arc
-              </p>
-              <p className="text-[13px] text-[#8C8C8C]">
-                It may have been removed or you may not have access.
-              </p>
-              <button
-                onClick={onBack}
-                className="mt-2 rounded-xl border-none bg-[#F5F5F5] px-5 py-2.5 text-[13px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
-              >
-                Go home
-              </button>
-            </div>
-          )}
-
-          {htmlUrl && (
-            <iframe
-              src={htmlUrl}
-              onLoad={() => setLoaded(true)}
-              title="Your arc story"
-              className="h-full w-full border-none"
-              sandbox="allow-scripts allow-popups"
-              loading="eager"
-            />
-          )}
-        </div>
-
-        {/* ── Options menu sheet ─────────────────────────────────────────────── */}
-        {sheet === "menu" && (
-          <>
-            <SheetBackdrop onClose={closeSheet} />
-            <SheetPanel label="Arc options">
-              {/* Share row */}
-              <button
-                onClick={
-                  arc?.is_shared
-                    ? () => setSheet("confirm-disable")
-                    : handleEnableShare
-                }
-                className="flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border-none px-4 py-3.5 text-left transition-colors active:opacity-80"
+      {/* ── Options menu sheet ─────────────────────────────────────────────── */}
+      {sheet === "menu" && (
+        <>
+          <SheetBackdrop onClose={closeSheet} closing={sheetClosing} />
+          <SheetPanel
+            label="Arc options"
+            closing={sheetClosing}
+            onCloseAnimEnd={onSheetClosed}
+          >
+            {/* Share row */}
+            <button
+              onClick={
+                arc?.is_shared
+                  ? () => setSheet("confirm-disable")
+                  : handleEnableShare
+              }
+              className="flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border-none px-4 py-3.5 text-left transition-colors active:opacity-80"
+              style={{
+                background: arc?.is_shared
+                  ? "rgba(16,185,129,0.07)"
+                  : "#F9F9F9",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
                 style={{
                   background: arc?.is_shared
-                    ? "rgba(16,185,129,0.07)"
-                    : "#F9F9F9",
-                  marginBottom: 8,
+                    ? "rgba(16,185,129,0.12)"
+                    : "rgba(99,102,241,0.10)",
                 }}
               >
-                <div
-                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
-                  style={{
-                    background: arc?.is_shared
-                      ? "rgba(16,185,129,0.12)"
-                      : "rgba(99,102,241,0.10)",
-                  }}
+                {arc?.is_shared ? (
+                  <CheckIcon color="#10B981" />
+                ) : (
+                  <span style={{ color: "#6366F1" }}>
+                    <ShareIcon />
+                  </span>
+                )}
+              </div>
+              <div className="flex-1">
+                <p
+                  className="text-[14px] font-semibold"
+                  style={{ color: arc?.is_shared ? "#10B981" : "#0C0C0C" }}
                 >
-                  {arc?.is_shared ? (
-                    <CheckIcon color="#10B981" />
+                  {arc?.is_shared ? "Shared" : "Share arc"}
+                </p>
+                <p className="text-[11.5px] text-[#8C8C8C]">
+                  {arc?.is_shared
+                    ? "Anyone with the link can view"
+                    : "Create a shareable link"}
+                </p>
+              </div>
+              {arc?.is_shared && (
+                <span className="text-[11px] font-medium text-[#8C8C8C]">
+                  Tap to disable
+                </span>
+              )}
+            </button>
+
+            {/* Regenerate row */}
+            <button
+              onClick={() => setSheet("confirm-regen")}
+              className="flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border-none bg-[#F9F9F9] px-4 py-3.5 text-left transition-colors active:opacity-80"
+              style={{ marginBottom: 8 }}
+            >
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(14,165,233,0.10)] text-[#0EA5E9]">
+                <RefreshIcon />
+              </div>
+              <div className="flex-1">
+                <p className="text-[14px] font-semibold text-[#0C0C0C]">
+                  Update arc
+                </p>
+                <p className="text-[11.5px] text-[#8C8C8C]">
+                  Regenerate with the latest news
+                </p>
+              </div>
+            </button>
+
+            {/* Delete row */}
+            <button
+              onClick={() => setSheet("confirm-delete")}
+              className="flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border-none bg-[rgba(239,68,68,0.05)] px-4 py-3.5 text-left transition-colors active:opacity-80"
+            >
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(239,68,68,0.10)] text-[#EF4444]">
+                <TrashIcon />
+              </div>
+              <div className="flex-1">
+                <p className="text-[14px] font-semibold text-[#EF4444]">
+                  Delete arc
+                </p>
+                <p className="text-[11.5px] text-[#8C8C8C]">
+                  Permanently remove this arc
+                </p>
+              </div>
+            </button>
+          </SheetPanel>
+        </>
+      )}
+
+      {/* ── Disable-sharing confirmation ──────────────────────────────────── */}
+      {sheet === "confirm-disable" && (
+        <>
+          <SheetBackdrop onClose={closeSheet} closing={sheetClosing} />
+          <SheetPanel
+            label="Disable sharing"
+            closing={sheetClosing}
+            onCloseAnimEnd={onSheetClosed}
+          >
+            <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.08)]">
+              <span className="text-[#EF4444]">
+                <ShareIcon />
+              </span>
+            </div>
+            <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
+              Disable sharing?
+            </h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
+              Anyone with the current link will no longer be able to view this
+              arc. You can re-enable sharing at any time.
+            </p>
+            <div className="mt-5 flex flex-col gap-2.5">
+              <button
+                onClick={handleDisableShare}
+                className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none py-[14px] text-[15px] font-bold text-white transition-opacity active:opacity-80"
+                style={{
+                  background: "linear-gradient(135deg,#EF4444,#DC2626)",
+                  boxShadow: "0 4px 16px rgba(239,68,68,0.28)",
+                }}
+              >
+                Yes, disable sharing
+              </button>
+              <button
+                onClick={closeSheet}
+                className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
+              >
+                Cancel
+              </button>
+            </div>
+          </SheetPanel>
+        </>
+      )}
+
+      {/* ── Regenerate confirmation ───────────────────────────────────────── */}
+      {sheet === "confirm-regen" && (
+        <>
+          <SheetBackdrop onClose={closeSheet} closing={sheetClosing} />
+          <SheetPanel
+            label="Update arc"
+            closing={sheetClosing}
+            onCloseAnimEnd={onSheetClosed}
+          >
+            <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(14,165,233,0.10)] text-[#0EA5E9]">
+              <RefreshIcon />
+            </div>
+            <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
+              Update this arc
+            </h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
+              We'll regenerate using the same topic with the latest news. Choose
+              what to do with your current arc.
+            </p>
+            <div className="mt-5 flex flex-col gap-2.5">
+              {/* Replace option */}
+              <button
+                onClick={() => handleRegenerate("replace")}
+                disabled={regenLoading}
+                className="flex w-full cursor-pointer items-start gap-3.5 rounded-2xl border-none px-4 py-3.5 text-left transition-opacity active:opacity-80 disabled:opacity-60"
+                style={{
+                  background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
+                  boxShadow: "0 4px 16px rgba(99,102,241,0.28)",
+                }}
+              >
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-white/20">
+                  {regenMode === "replace" ? (
+                    <Spinner color="rgba(255,255,255,0.9)" />
                   ) : (
-                    <span style={{ color: "#6366F1" }}>
-                      <ShareIcon />
-                    </span>
+                    <RefreshIcon />
                   )}
                 </div>
                 <div className="flex-1">
-                  <p
-                    className="text-[14px] font-semibold"
-                    style={{ color: arc?.is_shared ? "#10B981" : "#0C0C0C" }}
-                  >
-                    {arc?.is_shared ? "Shared" : "Share arc"}
-                  </p>
-                  <p className="text-[11.5px] text-[#8C8C8C]">
-                    {arc?.is_shared
-                      ? "Anyone with the link can view"
-                      : "Create a shareable link"}
+                  <p className="text-[14px] font-bold text-white">Replace</p>
+                  <p className="mt-0.5 text-[12px] leading-snug text-white/70">
+                    Generate a new version and replace this arc
                   </p>
                 </div>
-                {arc?.is_shared && (
-                  <span className="text-[11px] font-medium text-[#8C8C8C]">
-                    Tap to disable
-                  </span>
-                )}
               </button>
 
-              {/* Regenerate row */}
+              {/* Keep both option */}
               <button
-                onClick={() => setSheet("confirm-regen")}
-                className="flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border-none bg-[#F9F9F9] px-4 py-3.5 text-left transition-colors active:opacity-80"
-                style={{ marginBottom: 8 }}
+                onClick={() => handleRegenerate("keep")}
+                disabled={regenLoading}
+                className="flex w-full cursor-pointer items-start gap-3.5 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5 text-left transition-colors active:bg-[#F9F9F9] disabled:opacity-60"
               >
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(14,165,233,0.10)] text-[#0EA5E9]">
-                  <RefreshIcon />
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(99,102,241,0.08)] text-[#6366F1]">
+                  {regenMode === "keep" ? (
+                    <Spinner color="#6366F1" />
+                  ) : (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <rect
+                        x="1.5"
+                        y="4"
+                        width="9"
+                        height="10"
+                        rx="1.5"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                      <path
+                        d="M5 4V3a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 16 3v8a1.5 1.5 0 0 1-1.5 1.5H13"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  )}
                 </div>
                 <div className="flex-1">
-                  <p className="text-[14px] font-semibold text-[#0C0C0C]">
-                    Update arc
+                  <p className="text-[14px] font-bold text-[#0C0C0C]">
+                    Keep both
                   </p>
-                  <p className="text-[11.5px] text-[#8C8C8C]">
-                    Regenerate with the latest news
+                  <p className="mt-0.5 text-[12px] leading-snug text-[#8C8C8C]">
+                    Generate new arc, keep this one too
                   </p>
                 </div>
               </button>
 
-              {/* Delete row */}
               <button
-                onClick={() => setSheet("confirm-delete")}
-                className="flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border-none bg-[rgba(239,68,68,0.05)] px-4 py-3.5 text-left transition-colors active:opacity-80"
+                onClick={closeSheet}
+                disabled={regenLoading}
+                className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED] disabled:opacity-50"
               >
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(239,68,68,0.10)] text-[#EF4444]">
-                  <TrashIcon />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[14px] font-semibold text-[#EF4444]">
-                    Delete arc
-                  </p>
-                  <p className="text-[11.5px] text-[#8C8C8C]">
-                    Permanently remove this arc
-                  </p>
-                </div>
+                Cancel
               </button>
-            </SheetPanel>
-          </>
-        )}
+            </div>
+          </SheetPanel>
+        </>
+      )}
 
-        {/* ── Disable-sharing confirmation ──────────────────────────────────── */}
-        {sheet === "confirm-disable" && (
-          <>
-            <SheetBackdrop onClose={closeSheet} />
-            <SheetPanel label="Disable sharing">
-              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.08)]">
-                <span className="text-[#EF4444]">
-                  <ShareIcon />
-                </span>
-              </div>
-              <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
-                Disable sharing?
-              </h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
-                Anyone with the current link will no longer be able to view this
-                arc. You can re-enable sharing at any time.
-              </p>
-              <div className="mt-5 flex flex-col gap-2.5">
-                <button
-                  onClick={handleDisableShare}
-                  className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none py-[14px] text-[15px] font-bold text-white transition-opacity active:opacity-80"
-                  style={{
-                    background: "linear-gradient(135deg,#EF4444,#DC2626)",
-                    boxShadow: "0 4px 16px rgba(239,68,68,0.28)",
-                  }}
-                >
-                  Yes, disable sharing
-                </button>
-                <button
-                  onClick={closeSheet}
-                  className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </SheetPanel>
-          </>
-        )}
+      {/* ── Delete confirmation ───────────────────────────────────────────── */}
+      {sheet === "confirm-delete" && (
+        <>
+          <SheetBackdrop onClose={closeSheet} closing={sheetClosing} />
+          <SheetPanel
+            label="Delete arc"
+            closing={sheetClosing}
+            onCloseAnimEnd={onSheetClosed}
+          >
+            <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.10)] text-[#EF4444]">
+              <TrashIcon />
+            </div>
+            <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
+              Delete this arc?
+            </h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
+              This will permanently remove the arc and revoke any shared links.
+              This action cannot be undone.
+            </p>
+            <div className="mt-5 flex flex-col gap-2.5">
+              <button
+                onClick={handleDelete}
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[14px] text-[15px] font-bold text-white transition-opacity active:opacity-80"
+                style={{
+                  background: "linear-gradient(135deg,#EF4444,#DC2626)",
+                  boxShadow: "0 4px 16px rgba(239,68,68,0.28)",
+                }}
+              >
+                {deleteLoading ? (
+                  <Spinner color="rgba(255,255,255,0.8)" />
+                ) : null}
+                Yes, delete permanently
+              </button>
+              <button
+                onClick={closeSheet}
+                className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
+              >
+                Cancel
+              </button>
+            </div>
+          </SheetPanel>
+        </>
+      )}
 
-        {/* ── Regenerate confirmation ───────────────────────────────────────── */}
-        {sheet === "confirm-regen" && (
-          <>
-            <SheetBackdrop onClose={closeSheet} />
-            <SheetPanel label="Update arc">
-              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(14,165,233,0.10)] text-[#0EA5E9]">
-                <RefreshIcon />
-              </div>
-              <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
-                Update this arc
-              </h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
-                We'll regenerate using the same topic with the latest news.
-                Choose what to do with your current arc.
-              </p>
-              <div className="mt-5 flex flex-col gap-2.5">
-                {/* Replace option */}
-                <button
-                  onClick={() => handleRegenerate("replace")}
-                  disabled={regenLoading}
-                  className="flex w-full cursor-pointer items-start gap-3.5 rounded-2xl border-none px-4 py-3.5 text-left transition-opacity active:opacity-80 disabled:opacity-60"
-                  style={{
-                    background: "linear-gradient(135deg,#6366F1,#8B5CF6)",
-                    boxShadow: "0 4px 16px rgba(99,102,241,0.28)",
-                  }}
-                >
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-white/20">
-                    {regenMode === "replace" ? (
-                      <Spinner color="rgba(255,255,255,0.9)" />
-                    ) : (
-                      <RefreshIcon />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[14px] font-bold text-white">Replace</p>
-                    <p className="mt-0.5 text-[12px] leading-snug text-white/70">
-                      Generate a new version and replace this arc
-                    </p>
-                  </div>
-                </button>
-
-                {/* Keep both option */}
-                <button
-                  onClick={() => handleRegenerate("keep")}
-                  disabled={regenLoading}
-                  className="flex w-full cursor-pointer items-start gap-3.5 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5 text-left transition-colors active:bg-[#F9F9F9] disabled:opacity-60"
-                >
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-[rgba(99,102,241,0.08)] text-[#6366F1]">
-                    {regenMode === "keep" ? (
-                      <Spinner color="#6366F1" />
-                    ) : (
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <rect
-                          x="1.5"
-                          y="4"
-                          width="9"
-                          height="10"
-                          rx="1.5"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                        />
-                        <path
-                          d="M5 4V3a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 16 3v8a1.5 1.5 0 0 1-1.5 1.5H13"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[14px] font-bold text-[#0C0C0C]">
-                      Keep both
-                    </p>
-                    <p className="mt-0.5 text-[12px] leading-snug text-[#8C8C8C]">
-                      Generate new arc, keep this one too
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={closeSheet}
-                  disabled={regenLoading}
-                  className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED] disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </SheetPanel>
-          </>
-        )}
-
-        {/* ── Delete confirmation ───────────────────────────────────────────── */}
-        {sheet === "confirm-delete" && (
-          <>
-            <SheetBackdrop onClose={closeSheet} />
-            <SheetPanel label="Delete arc">
-              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.10)] text-[#EF4444]">
-                <TrashIcon />
-              </div>
-              <h2 className="mt-3 text-[17px] font-bold text-[#0C0C0C]">
-                Delete this arc?
-              </h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-[#8C8C8C]">
-                This will permanently remove the arc and revoke any shared
-                links. This action cannot be undone.
-              </p>
-              <div className="mt-5 flex flex-col gap-2.5">
-                <button
-                  onClick={handleDelete}
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-none py-[14px] text-[15px] font-bold text-white transition-opacity active:opacity-80"
-                  style={{
-                    background: "linear-gradient(135deg,#EF4444,#DC2626)",
-                    boxShadow: "0 4px 16px rgba(239,68,68,0.28)",
-                  }}
-                >
-                  {deleteLoading ? (
-                    <Spinner color="rgba(255,255,255,0.8)" />
-                  ) : null}
-                  Yes, delete permanently
-                </button>
-                <button
-                  onClick={closeSheet}
-                  className="flex w-full cursor-pointer items-center justify-center rounded-2xl border-none bg-[#F5F5F5] py-[14px] text-[15px] font-semibold text-[#0C0C0C] active:bg-[#EDEDED]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </SheetPanel>
-          </>
-        )}
-
-        <style>{`
+      <style>{`
         @keyframes resultSlideUp { from{opacity:0;transform:translateY(100%)} to{opacity:1;transform:translateY(0)} }
         @keyframes shimmer       { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
         @keyframes fadeIn        { from{opacity:0} to{opacity:1} }
         @keyframes sheetUp       { from{transform:translateY(100%)} to{transform:translateY(0)} }
+        @keyframes sheetDown     { from{transform:translateY(0)} to{transform:translateY(100%)} }
+        @keyframes fadeOut       { from{opacity:1} to{opacity:0} }
       `}</style>
-      </div>
-    );
-  },
-);
+    </div>
+  );
+});
 
 ResultScreen.displayName = "ResultScreen";

@@ -18,11 +18,3 @@ export interface StatusResponse {
   message?: string;
 }
 
-// ─── App view state machine ───────────────────────────────────────────────────
-
-export type AppView =
-  | { screen: "home" }
-  | { screen: "processing"; jobId: string }
-  | { screen: "result"; jobId: string; htmlUrl?: string }
-  | { screen: "shared"; shareToken: string }
-  | { screen: "auth"; redirectAfter?: AppView };

@@ -42,6 +42,7 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
 
   // ── Delete account modal state ────────────────────────────────────────────
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteModalClosing, setDeleteModalClosing] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -76,9 +77,72 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
 
   const handleCloseDeleteModal = useCallback(() => {
     if (deleteLoading) return;
-    setDeleteModalOpen(false);
-    setDeleteError(null);
+    setDeleteModalClosing(true);
   }, [deleteLoading]);
+
+  const onDeleteModalClosed = useCallback(() => {
+    setDeleteModalOpen(false);
+    setDeleteModalClosing(false);
+    setDeleteError(null);
+  }, []);
+
+  // ── Drag-to-dismiss for delete sheet ──────────────────────────────────────
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const [sheetDragClosing, setSheetDragClosing] = useState(false);
+  const sheetStartY = useRef(0);
+  const sheetStartTime = useRef(0);
+  const sheetHasDragged = useRef(false);
+
+  const handleSheetPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (deleteModalClosing || deleteLoading || e.nativeEvent.offsetY > 48)
+        return;
+      sheetStartY.current = e.clientY;
+      sheetStartTime.current = Date.now();
+      sheetHasDragged.current = false;
+      setSheetDragging(true);
+    },
+    [deleteModalClosing, deleteLoading],
+  );
+
+  const handleSheetPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!sheetDragging) return;
+      const delta = Math.max(0, e.clientY - sheetStartY.current);
+      if (!sheetHasDragged.current) {
+        if (delta < 6) return;
+        sheetHasDragged.current = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      setSheetDragY(delta);
+    },
+    [sheetDragging],
+  );
+
+  const handleSheetPointerUp = useCallback(() => {
+    if (!sheetDragging) return;
+    const delta = sheetDragY;
+    const elapsed = Math.max(1, Date.now() - sheetStartTime.current);
+    const velocity = delta / elapsed;
+    setSheetDragging(false);
+    sheetHasDragged.current = false;
+    if (delta > 80 || velocity > 0.4) {
+      setSheetDragClosing(true);
+    } else {
+      setSheetDragY(0);
+    }
+  }, [sheetDragging, sheetDragY]);
+
+  const handleSheetAnimOrTransitionEnd = useCallback(() => {
+    if (sheetDragClosing) {
+      setSheetDragY(0);
+      setSheetDragClosing(false);
+      onDeleteModalClosed();
+    } else if (deleteModalClosing) {
+      onDeleteModalClosed();
+    }
+  }, [sheetDragClosing, deleteModalClosing, onDeleteModalClosed]);
 
   const handleConfirmDelete = useCallback(async () => {
     if (deleteLoading) return;
@@ -237,7 +301,11 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
           {/* Backdrop */}
           <div
             className="fixed inset-0 z-40 bg-black/30"
-            style={{ animation: "fadeIn 0.2s ease both" }}
+            style={{
+              animation: deleteModalClosing
+                ? "fadeOut 0.22s ease both"
+                : "fadeIn 0.2s ease both",
+            }}
             onClick={handleCloseDeleteModal}
             aria-hidden="true"
           />
@@ -245,14 +313,43 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
           {/* Bottom sheet panel */}
           <div
             className="fixed left-0 right-0 z-50 rounded-t-3xl bg-white px-5 pt-4"
-            style={{
-              bottom: 0,
-              paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
-              animation: "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
-            }}
+            style={
+              sheetDragClosing
+                ? {
+                    bottom: 0,
+                    paddingBottom:
+                      "calc(28px + env(safe-area-inset-bottom, 0px))",
+                    transform: "translateY(110%)",
+                    transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+                  }
+                : sheetDragging || sheetDragY > 0
+                  ? {
+                      bottom: 0,
+                      paddingBottom:
+                        "calc(28px + env(safe-area-inset-bottom, 0px))",
+                      transform: `translateY(${sheetDragY}px)`,
+                      transition: sheetDragging
+                        ? "none"
+                        : "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)",
+                    }
+                  : {
+                      bottom: 0,
+                      paddingBottom:
+                        "calc(28px + env(safe-area-inset-bottom, 0px))",
+                      animation: deleteModalClosing
+                        ? "sheetDown 0.28s cubic-bezier(0.4,0,0.2,1) both"
+                        : "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
+                    }
+            }
             role="dialog"
             aria-modal="true"
             aria-label="Delete account"
+            onPointerDown={handleSheetPointerDown}
+            onPointerMove={handleSheetPointerMove}
+            onPointerUp={handleSheetPointerUp}
+            onPointerCancel={handleSheetPointerUp}
+            onAnimationEnd={handleSheetAnimOrTransitionEnd}
+            onTransitionEnd={handleSheetAnimOrTransitionEnd}
           >
             {/* Drag handle */}
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#EBEBEB]" />
@@ -324,6 +421,8 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
         @keyframes skeletonPulse{0%,100%{opacity:1}50%{opacity:0.4}}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
         @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        @keyframes sheetDown{from{transform:translateY(0)}to{transform:translateY(100%)}}
+        @keyframes fadeOut{from{opacity:1}to{opacity:0}}
       `}</style>
     </header>
   );

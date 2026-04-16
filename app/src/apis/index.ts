@@ -169,6 +169,11 @@ export function fetchActiveJobs(): Promise<ActiveJob[]> {
   return apiFetch<ActiveJob[]>("/api/arc/jobs/active");
 }
 
+export function fetchShowcaseArcs(): Promise<NewsArticle[]> {
+  // Public endpoint — no auth required, skip apiFetch to avoid waiting on _authReady
+  return fetch(`${BASE_URL}/api/arc/showcase`).then((r) => r.json()) as Promise<NewsArticle[]>;
+}
+
 export function regenerateArc(arcId: string, replace = false): Promise<{ job_id: string }> {
   return apiFetch<{ job_id: string }>(`/api/arc/${arcId}/regenerate`, {
     method: "POST",

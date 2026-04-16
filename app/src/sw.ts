@@ -42,11 +42,8 @@ const messaging = getMessaging(firebaseApp);
 onBackgroundMessage(messaging, async (payload) => {
   console.log("[sw] Background message received:", payload);
 
-  // If the Python code sent a 'notification' object, the browser shows it automatically.
-  // We return early to avoid showing a duplicate.
   if (payload.notification) return;
 
-  // Fallback: If for some reason the notification object is missing, manually show it.
   const data = payload.data as Record<string, string> | undefined;
   const arcUrl = data?.url ?? "/";
   const jobId = data?.job_id ?? "generic";
@@ -56,7 +53,7 @@ onBackgroundMessage(messaging, async (payload) => {
     icon: "/pwa-192x192.png",
     badge: "/pwa-192x192.png",
     tag: `arc-ready-${jobId}`,
-    data: { url: arcUrl }, // Store the URL for the click event
+    data: { url: arcUrl },
     requireInteraction: true,
   } as NotificationOptions);
 });
@@ -65,28 +62,27 @@ onBackgroundMessage(messaging, async (payload) => {
 self.addEventListener("notificationclick", (event: any) => {
   event.notification.close();
 
-  // 1. Try to get the URL from the data payload we sent from Python
-  // 2. Fallback to fcm_options.link (if provided)
-  // 3. Fallback to home page
-  const url =
+  console.log("[sw] Notification clicked. Data:", event.notification.data);
+
+  const targetUrl =
     event.notification.data?.url || event.notification.fcmOptions?.link || "/";
+
+  const fullUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
-      .then((windowClients) => {
-        // If an app tab is already open, navigate it to the arc and focus it
-        for (const client of windowClients) {
-          if (client.url === url && "focus" in client) {
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (client.url === fullUrl && "focus" in client) {
             return client.focus();
           }
           if ("navigate" in client && "focus" in client) {
-            return client.navigate(url).then((c: any) => c?.focus());
+            return client.navigate(fullUrl).then((c: any) => c?.focus());
           }
         }
-        // Otherwise, open a new window/tab
         if (self.clients.openWindow) {
-          return self.clients.openWindow(url);
+          return self.clients.openWindow(fullUrl);
         }
       }),
   );

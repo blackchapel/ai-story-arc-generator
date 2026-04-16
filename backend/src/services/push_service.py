@@ -16,10 +16,14 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
 
     message = messaging.Message(
         token=fcm_token,
-        # Data-only for web — no notification payload so Firebase does NOT
-        # auto-show a notification. Our service worker (sw.ts) handles
-        # showNotification() with the correct data.url so notificationclick
-        # can navigate the user directly to the arc.
+        # notification payload → high-priority push delivery (delivered
+        # immediately, not batched). sw.ts's onBackgroundMessage will call
+        # showNotification() itself with data.url, suppressing the auto-show,
+        # so no duplicate and the notificationclick handler gets the right URL.
+        notification=messaging.Notification(
+            title="arc.",
+            body="Your story arc is ready!",
+        ),
         data={
             "url": arc_url,
             "job_id": job_id,

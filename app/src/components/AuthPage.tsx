@@ -247,7 +247,7 @@ export const AuthPage = memo(function AuthPage() {
     } else if (redirectAfter) {
       navigate(redirectAfter, { replace: true });
     } else {
-      navigate("/", { replace: true });
+      navigate(-1);
     }
   }, [pendingPrompt, redirectAfter, navigate, showToast]);
 

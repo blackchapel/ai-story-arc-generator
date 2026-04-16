@@ -526,19 +526,26 @@ export const AuthPage = memo(function AuthPage() {
             it to sign in — no password needed.
           </p>
         </div>
-        <div className="mt-6 flex items-center gap-1">
-          <span className="text-[13px] text-[#8C8C8C]">
-            Didn&apos;t receive it?
-          </span>
-          <button
-            onClick={handleResend}
-            disabled={resendCooldown > 0 || loading}
-            className="cursor-pointer border-none bg-transparent text-[13px] font-semibold text-[#6366F1] transition-opacity disabled:cursor-default disabled:opacity-50"
-          >
-            {resendCooldown > 0
-              ? `Resend in ${resendCooldown}s`
-              : "Resend link"}
-          </button>
+        <div className="mt-6 flex flex-col items-center">
+          <div>
+            <span className="text-[13px] text-[#8C8C8C]">
+              Didn&apos;t receive it?
+            </span>
+          </div>
+          <div>
+            <span className="text-[13px] text-[#8C8C8C]">
+              {" Check your spam folder or "}
+            </span>
+            <button
+              onClick={handleResend}
+              disabled={resendCooldown > 0 || loading}
+              className="cursor-pointer border-none bg-transparent text-[13px] font-semibold text-[#6366F1] hover:underline underline-offset-2 transition-opacity disabled:cursor-default disabled:opacity-50"
+            >
+              {resendCooldown > 0
+                ? `resend in ${resendCooldown}s`
+                : "resend the link"}
+            </button>
+          </div>
         </div>
         <div className="mt-3">
           <button

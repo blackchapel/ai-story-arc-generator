@@ -39,11 +39,9 @@ const firebaseApp = initializeApp({
 const messaging = getMessaging(firebaseApp);
 
 // Background Message Handler
+// Message is data-only (no notification payload), so we always reach here
+// and show the notification ourselves with data.url set for notificationclick.
 onBackgroundMessage(messaging, async (payload) => {
-  console.log("[sw] Background message received:", payload);
-
-  if (payload.notification) return;
-
   const data = payload.data as Record<string, string> | undefined;
   const arcUrl = data?.url ?? "/";
   const jobId = data?.job_id ?? "generic";

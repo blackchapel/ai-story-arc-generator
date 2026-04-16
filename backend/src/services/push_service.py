@@ -16,24 +16,16 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
 
     message = messaging.Message(
         token=fcm_token,
+        # Data-only for web — no notification payload so Firebase does NOT
+        # auto-show a notification. Our service worker (sw.ts) handles
+        # showNotification() with the correct data.url so notificationclick
+        # can navigate the user directly to the arc.
         data={
-            "url": arc_url, 
-            "job_id": job_id 
+            "url": arc_url,
+            "job_id": job_id,
         },
-        notification=messaging.Notification(
-            title="arc.",
-            body="Your story arc is ready!",
-        ),
         webpush=messaging.WebpushConfig(
-            notification=messaging.WebpushNotification(
-                title="arc.",
-                body="Your story arc is ready!",
-                icon="/pwa-192x192.png",
-                data={
-                    "url": arc_url
-                }
-            ),
-            fcm_options=messaging.WebpushFCMOptions(link=arc_url),
+            headers={"TTL": "86400"},
         ),
     )
 

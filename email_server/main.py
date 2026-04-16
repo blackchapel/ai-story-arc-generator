@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from threading import Lock
 from dotenv import load_dotenv
+import httpx
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, field_validator
@@ -34,12 +35,17 @@ def _require_env(name: str) -> str:
         raise RuntimeError(f"Required environment variable '{name}' is not set")
     return val
 
-GMAIL_ADDRESS      = _require_env("GMAIL_ADDRESS")
-GMAIL_APP_PASSWORD = _require_env("GMAIL_APP_PASSWORD")
-EMAIL_API_KEY      = _require_env("EMAIL_API_KEY")
+GMAIL_ADDRESS        = _require_env("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD   = _require_env("GMAIL_APP_PASSWORD")
+EMAIL_API_KEY        = _require_env("EMAIL_API_KEY")
+MAILJET_API_KEY      = _require_env("MAILJET_API_KEY")
+MAILJET_API_SECRET   = _require_env("MAILJET_API_SECRET")
+MAILJET_SENDER_EMAIL = _require_env("MAILJET_SENDER_EMAIL")
+MAILJET_SENDER_NAME  = os.environ.get("MAILJET_SENDER_NAME", "arc.").strip()
 
-_SMTP_HOST = "smtp.gmail.com"
-_SMTP_PORT = 587
+_SMTP_HOST      = "smtp.gmail.com"
+_SMTP_PORT      = 587
+_MAILJET_URL    = "https://api.mailjet.com/v3.1/send"
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
 
@@ -77,6 +83,27 @@ def _send_email(to_email: str, msg: MIMEMultipart) -> None:
         server.starttls()
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_ADDRESS, to_email, msg.as_string())
+
+
+def _send_email_api(to_email: str, to_name: str, subject: str, text_body: str, html_body: str) -> None:
+    payload = {
+        "Messages": [
+            {
+                "From": {"Email": MAILJET_SENDER_EMAIL, "Name": MAILJET_SENDER_NAME},
+                "To": [{"Email": to_email, "Name": to_name}],
+                "Subject": subject,
+                "TextPart": text_body,
+                "HTMLPart": html_body,
+            }
+        ]
+    }
+    response = httpx.post(
+        _MAILJET_URL,
+        json=payload,
+        auth=(MAILJET_API_KEY, MAILJET_API_SECRET),
+        timeout=10,
+    )
+    response.raise_for_status()
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -187,7 +214,7 @@ def send_magic_link(
     msg.attach(MIMEText(_magic_link_html(body.magic_link), "html"))
 
     try:
-        _send_email(body.to_email, msg)
+        _send_email_api(body.to_email, body.to_email, "Sign in to arc.", text_body, _magic_link_html(body.magic_link))
         logger.info("Magic link email sent to %s", body.to_email)
     except smtplib.SMTPException as exc:
         logger.error("SMTP error sending to %s: %s", body.to_email, exc)

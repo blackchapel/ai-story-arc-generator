@@ -62,28 +62,23 @@ onBackgroundMessage(messaging, async (payload) => {
 self.addEventListener("notificationclick", (event: any) => {
   event.notification.close();
 
-  console.log("[sw] Notification clicked. Data:", event.notification.data);
-
-  const targetUrl =
-    event.notification.data?.url || event.notification.fcmOptions?.link || "/";
-
+  const data = event.notification.data as Record<string, string> | undefined;
+  const targetUrl = data?.url ?? "/";
   const fullUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
-        for (const client of clientList) {
-          if (client.url === fullUrl && "focus" in client) {
-            return client.focus();
-          }
-          if ("navigate" in client && "focus" in client) {
-            return client.navigate(fullUrl).then((c: any) => c?.focus());
-          }
+        // App is already open — post a message so React Router navigates
+        // without a full page reload, then bring the window to foreground.
+        const existing = clientList[0] as WindowClient | undefined;
+        if (existing) {
+          existing.postMessage({ type: "SW_NAVIGATE", url: fullUrl });
+          return existing.focus();
         }
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(fullUrl);
-        }
+        // App is closed — open it directly at the arc URL.
+        return self.clients.openWindow(fullUrl);
       }),
   );
 });

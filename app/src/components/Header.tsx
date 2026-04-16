@@ -86,64 +86,6 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
     setDeleteError(null);
   }, []);
 
-  // ── Drag-to-dismiss for delete sheet ──────────────────────────────────────
-  const [sheetDragY, setSheetDragY] = useState(0);
-  const [sheetDragging, setSheetDragging] = useState(false);
-  const [sheetDragClosing, setSheetDragClosing] = useState(false);
-  const sheetStartY = useRef(0);
-  const sheetStartTime = useRef(0);
-  const sheetHasDragged = useRef(false);
-
-  const handleSheetPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (deleteModalClosing || deleteLoading || e.nativeEvent.offsetY > 48)
-        return;
-      sheetStartY.current = e.clientY;
-      sheetStartTime.current = Date.now();
-      sheetHasDragged.current = false;
-      setSheetDragging(true);
-    },
-    [deleteModalClosing, deleteLoading],
-  );
-
-  const handleSheetPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!sheetDragging) return;
-      const delta = Math.max(0, e.clientY - sheetStartY.current);
-      if (!sheetHasDragged.current) {
-        if (delta < 6) return;
-        sheetHasDragged.current = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }
-      setSheetDragY(delta);
-    },
-    [sheetDragging],
-  );
-
-  const handleSheetPointerUp = useCallback(() => {
-    if (!sheetDragging) return;
-    const delta = sheetDragY;
-    const elapsed = Math.max(1, Date.now() - sheetStartTime.current);
-    const velocity = delta / elapsed;
-    setSheetDragging(false);
-    sheetHasDragged.current = false;
-    if (delta > 80 || velocity > 0.4) {
-      setSheetDragClosing(true);
-    } else {
-      setSheetDragY(0);
-    }
-  }, [sheetDragging, sheetDragY]);
-
-  const handleSheetAnimOrTransitionEnd = useCallback(() => {
-    if (sheetDragClosing) {
-      setSheetDragY(0);
-      setSheetDragClosing(false);
-      onDeleteModalClosed();
-    } else if (deleteModalClosing) {
-      onDeleteModalClosed();
-    }
-  }, [sheetDragClosing, deleteModalClosing, onDeleteModalClosed]);
-
   const handleConfirmDelete = useCallback(async () => {
     if (deleteLoading) return;
     setDeleteLoading(true);
@@ -313,46 +255,44 @@ export const Header = memo<HeaderProps>(({ onMenuClick, onProfileClick }) => {
           {/* Bottom sheet panel */}
           <div
             className="fixed left-0 right-0 z-50 rounded-t-3xl bg-white px-5 pt-4"
-            style={
-              sheetDragClosing
-                ? {
-                    bottom: 0,
-                    paddingBottom:
-                      "calc(28px + env(safe-area-inset-bottom, 0px))",
-                    transform: "translateY(110%)",
-                    transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
-                  }
-                : sheetDragging || sheetDragY > 0
-                  ? {
-                      bottom: 0,
-                      paddingBottom:
-                        "calc(28px + env(safe-area-inset-bottom, 0px))",
-                      transform: `translateY(${sheetDragY}px)`,
-                      transition: sheetDragging
-                        ? "none"
-                        : "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-                    }
-                  : {
-                      bottom: 0,
-                      paddingBottom:
-                        "calc(28px + env(safe-area-inset-bottom, 0px))",
-                      animation: deleteModalClosing
-                        ? "sheetDown 0.28s cubic-bezier(0.4,0,0.2,1) both"
-                        : "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
-                    }
-            }
+            style={{
+              bottom: 0,
+              paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
+              animation: deleteModalClosing
+                ? "sheetDown 0.28s cubic-bezier(0.4,0,0.2,1) both"
+                : "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
+            }}
             role="dialog"
             aria-modal="true"
             aria-label="Delete account"
-            onPointerDown={handleSheetPointerDown}
-            onPointerMove={handleSheetPointerMove}
-            onPointerUp={handleSheetPointerUp}
-            onPointerCancel={handleSheetPointerUp}
-            onAnimationEnd={handleSheetAnimOrTransitionEnd}
-            onTransitionEnd={handleSheetAnimOrTransitionEnd}
+            onAnimationEnd={
+              deleteModalClosing ? onDeleteModalClosed : undefined
+            }
           >
-            {/* Drag handle */}
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#EBEBEB]" />
+            {/* Handle row */}
+            <div className="relative mb-4 flex h-6 items-center justify-center">
+              <button
+                onClick={handleCloseDeleteModal}
+                disabled={deleteLoading}
+                className="absolute right-0 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-none bg-[#F5F5F5] text-[#8C8C8C] transition-colors active:bg-[#EDEDED] disabled:opacity-40"
+                aria-label="Close"
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M1 1l8 8M9 1L1 9"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
 
             {/* Icon */}
             <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.10)] text-[#EF4444]">

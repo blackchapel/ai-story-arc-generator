@@ -106,6 +106,12 @@ export default function HomePage() {
     return () => ctrl.abort();
   }, [user, authLoading]);
 
+  // ── Refresh arcs on every home screen visit ──────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    refreshArcs();
+  }, []); // empty deps — runs once per mount, which is once per navigation to /
+
   // ── Active jobs: initial fetch + live polling ─────────────────────────────
   useEffect(() => {
     if (authLoading || !user) return;

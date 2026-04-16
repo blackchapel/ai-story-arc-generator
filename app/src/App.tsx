@@ -59,6 +59,20 @@ export default function RootLayout() {
     return () => ctrl.abort();
   }, [user, authLoading, loadArcs, clearArcs, showToast]);
 
+  // ── Background notification click → navigate via SW message ─────────────
+  useEffect(() => {
+    if (!navigator.serviceWorker) return;
+    const handler = (event: MessageEvent<{ type: string; url: string }>) => {
+      if (event.data?.type !== "SW_NAVIGATE") return;
+      try {
+        const path = new URL(event.data.url).pathname;
+        navigate(path);
+      } catch {}
+    };
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => navigator.serviceWorker.removeEventListener("message", handler);
+  }, [navigate]);
+
   // ── Foreground push notifications ─────────────────────────────────────────
   const { onForegroundMessage } = usePushNotifications();
   const handleForegroundMessage = useCallback(

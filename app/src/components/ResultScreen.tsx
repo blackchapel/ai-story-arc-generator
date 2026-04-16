@@ -186,6 +186,7 @@ interface SheetPanelProps {
   label: string;
   closing: boolean;
   onCloseAnimEnd: () => void;
+  onClose: () => void;
 }
 
 function SheetPanel({
@@ -193,103 +194,46 @@ function SheetPanel({
   label,
   closing,
   onCloseAnimEnd,
+  onClose,
 }: SheetPanelProps) {
-  const [dragY, setDragY] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const [dragClosing, setDragClosing] = useState(false);
-  const startY = useRef(0);
-  const startTime = useRef(0);
-  const hasDragged = useRef(false);
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (closing || e.nativeEvent.offsetY > 48) return;
-      startY.current = e.clientY;
-      startTime.current = Date.now();
-      hasDragged.current = false;
-      setDragging(true);
-    },
-    [closing],
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging) return;
-      const delta = Math.max(0, e.clientY - startY.current);
-      if (!hasDragged.current) {
-        if (delta < 6) return;
-        hasDragged.current = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }
-      setDragY(delta);
-    },
-    [dragging],
-  );
-
-  const handlePointerUp = useCallback(() => {
-    if (!dragging) return;
-    const delta = dragY;
-    const elapsed = Math.max(1, Date.now() - startTime.current);
-    const velocity = delta / elapsed;
-    setDragging(false);
-    hasDragged.current = false;
-    if (delta > 80 || velocity > 0.4) {
-      setDragClosing(true);
-    } else {
-      setDragY(0);
-    }
-  }, [dragging, dragY]);
-
-  const handleAnimOrTransitionEnd = useCallback(() => {
-    if (dragClosing) {
-      setDragY(0);
-      setDragClosing(false);
-      onCloseAnimEnd();
-    } else if (closing) {
-      onCloseAnimEnd();
-    }
-  }, [dragClosing, closing, onCloseAnimEnd]);
-
-  const panelStyle: React.CSSProperties = dragClosing
-    ? {
-        bottom: 0,
-        paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
-        transform: "translateY(110%)",
-        transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
-      }
-    : dragging || dragY > 0
-      ? {
-          bottom: 0,
-          paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
-          transform: `translateY(${dragY}px)`,
-          transition: dragging
-            ? "none"
-            : "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-        }
-      : {
-          bottom: 0,
-          paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
-          animation: closing
-            ? "sheetDown 0.28s cubic-bezier(0.4,0,0.2,1) both"
-            : "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
-        };
-
   return (
     <div
       className="fixed left-0 right-0 z-50 rounded-t-3xl bg-white px-5 pt-4"
-      style={panelStyle}
+      style={{
+        bottom: 0,
+        paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
+        animation: closing
+          ? "sheetDown 0.28s cubic-bezier(0.4,0,0.2,1) both"
+          : "sheetUp 0.3s cubic-bezier(0.34,1.06,0.64,1) both",
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onAnimationEnd={handleAnimOrTransitionEnd}
-      onTransitionEnd={handleAnimOrTransitionEnd}
+      onAnimationEnd={closing ? onCloseAnimEnd : undefined}
     >
-      {/* Drag handle */}
-      <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#EBEBEB]" />
+      {/* Handle row */}
+      <div className="relative mb-4 flex h-6 items-center justify-center">
+        <button
+          onClick={onClose}
+          className="absolute right-0 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-none bg-[#F5F5F5] text-[#8C8C8C] transition-colors active:bg-[#EDEDED]"
+          aria-label="Close"
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M1 1l8 8M9 1L1 9"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
       {children}
     </div>
   );
@@ -630,6 +574,7 @@ export const ResultScreen = memo(function ResultScreen() {
             label="Arc options"
             closing={sheetClosing}
             onCloseAnimEnd={onSheetClosed}
+            onClose={closeSheet}
           >
             {/* Share row */}
             <button
@@ -730,6 +675,7 @@ export const ResultScreen = memo(function ResultScreen() {
             label="Disable sharing"
             closing={sheetClosing}
             onCloseAnimEnd={onSheetClosed}
+            onClose={closeSheet}
           >
             <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.08)]">
               <span className="text-[#EF4444]">
@@ -773,6 +719,7 @@ export const ResultScreen = memo(function ResultScreen() {
             label="Update arc"
             closing={sheetClosing}
             onCloseAnimEnd={onSheetClosed}
+            onClose={closeSheet}
           >
             <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(14,165,233,0.10)] text-[#0EA5E9]">
               <RefreshIcon />
@@ -875,6 +822,7 @@ export const ResultScreen = memo(function ResultScreen() {
             label="Delete arc"
             closing={sheetClosing}
             onCloseAnimEnd={onSheetClosed}
+            onClose={closeSheet}
           >
             <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(239,68,68,0.10)] text-[#EF4444]">
               <TrashIcon />

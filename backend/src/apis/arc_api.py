@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 # In a multi-replica deployment, SSE streaming and in-memory status only work
 # correctly when the client is routed to the same replica that owns the job.
 
-jobs: dict[str, dict] = {}
-_subscribers: dict[str, list[asyncio.Queue]] = {}
+jobs: dict[str, dict[str, str]] = {}
+_subscribers: dict[str, list[asyncio.Queue[str]]] = {}
 _sub_lock = threading.Lock()
 
 
@@ -254,7 +254,7 @@ async def stream_status(job_id: str, request: Request):
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    q: asyncio.Queue = asyncio.Queue()
+    q: asyncio.Queue[str] = asyncio.Queue()
     with _sub_lock:
         _subscribers.setdefault(job_id, []).append(q)
     await q.put(jobs[job_id]["status"])

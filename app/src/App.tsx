@@ -30,9 +30,9 @@ export default function RootLayout() {
 
   const { loadArcs, clearArcs } = useArcStore.getState();
 
-  // ── Redirect to /auth when cross-device magic-link is detected ────────────
+  // ── Open auth overlay on home when cross-device magic-link is detected ────
   useEffect(() => {
-    if (pendingLinkSignIn) navigate("/auth");
+    if (pendingLinkSignIn) navigate("/", { state: { openAuth: true }, replace: true });
   }, [pendingLinkSignIn, navigate]);
 
   // ── Load / clear arcs when auth state settles ─────────────────────────────
@@ -79,7 +79,8 @@ export default function RootLayout() {
     (jobId: string) => {
       showToast("Your arc is ready!", "success");
       setTimeout(() => {
-        navigate(`/arc/${jobId}`);
+        // App is open → there is history → back button can use -1
+        navigate(`/arc/${jobId}`, { state: { from: "home" } });
       }, 800);
     },
     [navigate, showToast],

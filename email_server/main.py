@@ -8,7 +8,6 @@ import smtplib
 import time
 from collections import defaultdict
 from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from threading import Lock
 from dotenv import load_dotenv
 import httpx
@@ -199,25 +198,17 @@ def send_magic_link(
     ip = request.client.host if request.client else "unknown"
     _check_rate_limit(ip)
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Sign in to arc."
-    msg["From"]    = f"arc. <{GMAIL_ADDRESS}>"
-    msg["To"]      = body.to_email
-
     text_body = (
         f"Sign in to arc. by clicking this link:\n{body.magic_link}\n\n"
         "This link expires in 30 minutes and can only be used once.\n"
         "If you did not request this, ignore this email."
     )
 
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(_magic_link_html(body.magic_link), "html"))
-
     try:
         _send_email_api(body.to_email, body.to_email, "Sign in to arc.", text_body, _magic_link_html(body.magic_link))
         logger.info("Magic link email sent to %s", body.to_email)
-    except smtplib.SMTPException as exc:
-        logger.error("SMTP error sending to %s: %s", body.to_email, exc)
+    except httpx.HTTPError as exc:
+        logger.error("Email API error sending to %s: %s", body.to_email, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to send email. Please try again.",

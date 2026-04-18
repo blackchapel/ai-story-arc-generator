@@ -1,8 +1,7 @@
 import logging
 import os
 from firebase_admin import messaging
-from firebase_admin.exceptions import FirebaseError
-from src.firebase_init import _get_app   # ensure app is initialized
+from src.firebase_init import _get_app
 
 logger = logging.getLogger(__name__)
 

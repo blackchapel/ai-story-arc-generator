@@ -38,9 +38,8 @@ const firebaseApp = initializeApp({
 
 const messaging = getMessaging(firebaseApp);
 
-// Background Message Handler
-// Message is data-only (no notification payload), so we always reach here
-// and show the notification ourselves with data.url set for notificationclick.
+// Show our own notification so we control the data.url for notificationclick.
+// This suppresses Firebase's auto-show when a notification payload is present.
 onBackgroundMessage(messaging, async (payload) => {
   const data = payload.data as Record<string, string> | undefined;
   const arcUrl = data?.url ?? "/";
@@ -57,7 +56,7 @@ onBackgroundMessage(messaging, async (payload) => {
 });
 
 // ── Notification Click Logic ──────────────────────────────────────────────────
-self.addEventListener("notificationclick", (event: any) => {
+self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
 
   const data = event.notification.data as Record<string, string> | undefined;

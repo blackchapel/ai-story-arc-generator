@@ -245,8 +245,13 @@ export const ResultScreen = memo(function ResultScreen() {
   const { jobId = "" } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const initialHtmlUrl = (location.state as { htmlUrl?: string } | null)
-    ?.htmlUrl;
+
+  type ArcLocationState = { from?: string; htmlUrl?: string } | null;
+  const locState       = location.state as ArcLocationState;
+  const initialHtmlUrl = locState?.htmlUrl;
+  // "home" means we came from within the app → -1 goes back to /.
+  // null/undefined means direct URL or notification → replace to home.
+  const from = locState?.from;
 
   const user = useAuthStore((s) => s.user);
   const { refreshArcs } = useArcStore.getState();
@@ -379,7 +384,9 @@ export const ResultScreen = memo(function ResultScreen() {
       setRegenMode(mode);
       try {
         const { job_id } = await regenerateArc(arc.id, mode === "replace");
-        navigate(`/process/${job_id}`, { replace: true });
+        // Navigate home with processingJobId in state — HomePage opens the
+        // processing overlay. replace: true so back from arc doesn't return here.
+        navigate("/", { replace: true, state: { processingJobId: job_id } });
       } catch {
         /* silent */
       } finally {
@@ -437,7 +444,7 @@ export const ResultScreen = memo(function ResultScreen() {
         {/* Left — back */}
         <div className="flex flex-1 items-center">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => from ? navigate(-1) : navigate("/", { replace: true })}
             className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2 text-[13px] font-semibold text-[#6366F1] transition-opacity active:opacity-60"
             aria-label="Back"
           >

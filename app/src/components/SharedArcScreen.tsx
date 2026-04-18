@@ -1,15 +1,24 @@
 import { memo, useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router";
 import { fetchSharedArc, saveSharedArc, ApiError } from "@/apis";
 import { useAuthStore } from "@/store/authStore";
+import { AuthPage } from "@/components/AuthPage";
 import type { NewsArticle } from "@/types";
 
 export const SharedArcScreen = memo(function SharedArcScreen() {
   const { shareToken = "" } = useParams<{ shareToken: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const isShowcase = searchParams.get("showcase") === "true";
   const user = useAuthStore((s) => s.user);
+
+  // "home" → came from within the app, back can use -1.
+  // null/undefined → direct URL or notification, back replaces to home.
+  const from = (location.state as { from?: string } | null)?.from;
+
+  // Auth overlay for "sign in to save"
+  const [authOpen, setAuthOpen] = useState(false);
 
   const [arc, setArc] = useState<NewsArticle | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -34,14 +43,14 @@ export const SharedArcScreen = memo(function SharedArcScreen() {
 
   // If the viewer is the owner, redirect to the canonical arc URL
   useEffect(() => {
-    if (isOwner && arc) navigate(`/arc/${arc.id}`, { replace: true });
-  }, [isOwner, arc, navigate]);
+    if (isOwner && arc) navigate(`/arc/${arc.id}`, { replace: true, state: { from } });
+  }, [isOwner, arc, navigate, from]);
 
   const alreadySaved = arc?.is_saved ?? false;
 
   const handleSave = useCallback(async () => {
     if (!user) {
-      navigate("/auth", { state: { redirectAfter: `/shared/${shareToken}` } });
+      setAuthOpen(true);
       return;
     }
     if (saving || saved || alreadySaved) return;
@@ -70,7 +79,30 @@ export const SharedArcScreen = memo(function SharedArcScreen() {
     }
   }, [arc]);
 
+  // After auth completes, attempt the save automatically
+  const handleAuthSuccess = useCallback(() => {
+    setSaving(true);
+    setSaveErr(null);
+    saveSharedArc(shareToken)
+      .then(() => setSaved(true))
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 400) {
+          setSaved(true); // already own it
+        } else {
+          setSaveErr("Couldn't save. Please try again.");
+        }
+      })
+      .finally(() => setSaving(false));
+  }, [shareToken]);
+
   return (
+    <>
+      {authOpen && (
+        <AuthPage
+          onClose={() => setAuthOpen(false)}
+          onSuccess={handleAuthSuccess}
+        />
+      )}
     <div
       className="flex h-full w-full flex-col bg-white"
       style={{
@@ -93,7 +125,7 @@ export const SharedArcScreen = memo(function SharedArcScreen() {
 
         <div className="flex flex-1 items-center">
           <button
-            onClick={() => navigate("/", { replace: true })}
+            onClick={() => from ? navigate(-1) : navigate("/", { replace: true })}
             className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border-none bg-transparent px-2 text-[13px] font-semibold text-[#6366F1] transition-opacity active:opacity-60"
             aria-label="Back"
           >
@@ -390,6 +422,7 @@ export const SharedArcScreen = memo(function SharedArcScreen() {
         @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
       `}</style>
     </div>
+    </>
   );
 });
 

@@ -1,18 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import mkcert from "vite-plugin-mkcert";
 import { VitePWA } from "vite-plugin-pwa";
 import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
-  server: {
-    historyApiFallback: true,
-  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   plugins: [
+    mkcert(),
     react(),
     VitePWA({
       strategies: "injectManifest",
@@ -23,6 +22,10 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       },
       registerType: "autoUpdate",
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
       includeAssets: ["favicon.ico", "apple-touch-icon.png"],
       manifest: {
         name: "arc. — News",

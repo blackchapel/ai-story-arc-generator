@@ -14,7 +14,7 @@ import { fetchMe } from "@/apis";
 import { emailStore } from "@/utils/tokenStore";
 import {
   useAuthStore,
-  initialHref,
+  initialFirebaseUrl,
   cleanSignInUrl,
 } from "@/store/authStore";
 
@@ -22,14 +22,14 @@ export function useAuthInit(): void {
   // True while signInWithEmailLink is in-flight — suppresses the intermediate
   // onAuthStateChanged(null) that would otherwise flash the logged-out UI.
   const isCompletingSignInRef = useRef(
-    isSignInWithEmailLink(auth, initialHref) && !!emailStore.get(),
+    isSignInWithEmailLink(auth, initialFirebaseUrl) && !!emailStore.get(),
   );
 
   const { _setUser, _setLoading, _setPendingLinkSignIn } = useAuthStore.getState();
 
   useEffect(() => {
     // ── Detect & auto-complete same-device magic-link sign-in ─────────────────
-    if (!isSignInWithEmailLink(auth, initialHref)) return;
+    if (!isSignInWithEmailLink(auth, initialFirebaseUrl)) return;
 
     const savedEmail = emailStore.get();
     if (!savedEmail) {
@@ -39,7 +39,7 @@ export function useAuthInit(): void {
       return;
     }
 
-    signInWithEmailLink(auth, savedEmail, initialHref)
+    signInWithEmailLink(auth, savedEmail, initialFirebaseUrl)
       .then(() => {
         emailStore.clear();
         cleanSignInUrl();

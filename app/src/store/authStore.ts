@@ -7,17 +7,34 @@ import { sendMagicLink as sendMagicLinkApi } from "@/apis";
 import { emailStore } from "@/utils/tokenStore";
 import type { User } from "@/types";
 
-// Captured at module load — before any router/history manipulation strips Firebase params.
+// Captured at module load — before any router/history manipulation strips params.
 export const initialHref = window.location.href;
+
+// If the page was opened via our wrapped magic link (/auth/verify?magicUrl=...),
+// extract the real Firebase URL so signInWithEmailLink() gets the right URL.
+// Falls back to the current href for direct Firebase links (legacy / dev).
+function extractFirebaseUrl(href: string): string {
+  try {
+    const wrapped = new URL(href).searchParams.get("magicUrl");
+    return wrapped ? decodeURIComponent(wrapped) : href;
+  } catch {
+    return href;
+  }
+}
+
+export const initialFirebaseUrl = extractFirebaseUrl(initialHref);
 
 export function cleanSignInUrl(): void {
   try {
     const url = new URL(window.location.href);
+    // Firebase params (present when using the raw Firebase URL directly)
     url.searchParams.delete("apiKey");
     url.searchParams.delete("oobCode");
     url.searchParams.delete("mode");
     url.searchParams.delete("lang");
     url.searchParams.delete("continueUrl");
+    // Our wrapper param
+    url.searchParams.delete("magicUrl");
     window.history.replaceState({}, document.title, url.toString());
   } catch {
     // Non-critical
@@ -61,7 +78,7 @@ export const useAuthStore = create<AuthState>()(
       completeLinkSignIn: async (email: string) => {
         set({ isLoading: true });
         try {
-          await signInWithEmailLink(auth, email, initialHref);
+          await signInWithEmailLink(auth, email, initialFirebaseUrl);
           emailStore.clear();
           set({ pendingLinkSignIn: false });
           cleanSignInUrl();

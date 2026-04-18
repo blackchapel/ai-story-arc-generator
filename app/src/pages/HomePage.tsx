@@ -97,6 +97,10 @@ export default function HomePage() {
     const s = initStateRef.current;
     if (s?.openAuth)        setAuthOpen(true);
     if (s?.processingJobId) setProcessingJobId(s.processingJobId);
+    // Wipe the history entry state so a hard reload doesn't re-trigger overlays.
+    if (s?.openAuth || s?.processingJobId) {
+      window.history.replaceState({}, "");
+    }
   }, []); // intentionally mount-only
 
   const { isBookmarked, toggle: toggleBookmark } = useBookmarks();

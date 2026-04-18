@@ -178,8 +178,8 @@ class SendMagicLinkRequest(BaseModel):
     @field_validator("magic_link")
     @classmethod
     def validate_magic_link(cls, v: str) -> str:
-        if not v.startswith("https://"):
-            raise ValueError("magic_link must be an HTTPS URL")
+        if not v.startswith(("https://", "http://")):
+            raise ValueError("magic_link must be a valid URL")
         return v
 
 # ── Routes ────────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import urllib.parse
 from collections import defaultdict
 from threading import Lock
 from typing import Annotated
@@ -49,18 +50,22 @@ _APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
 def send_magic_link(body: SendMagicLinkRequest, request: Request) -> None:
     ip = request.client.host if request.client else "unknown"
     _check_rate_limit(ip)
+
+    app_base = _APP_BASE_URL or "https://arc.example.com"
+
     try:
-        link = generate_magic_link(
-            str(body.email),
-            redirect_url=_APP_BASE_URL or "https://arc.example.com",
-        )
+        firebase_link = generate_magic_link(str(body.email), redirect_url=app_base)
     except FirebaseError as exc:
         logger.error("Firebase magic link generation failed for %s: %s", body.email, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to generate sign-in link. Please try again.",
         ) from exc
-    send_magic_link_email(str(body.email), link)
+
+    # Wrap in our domain so the email link opens the PWA, not Firebase's domain.
+    # The frontend extracts magicUrl and passes it to signInWithEmailLink().
+    wrapped = f"{app_base}/auth/verify?magicUrl={urllib.parse.quote(firebase_link, safe='')}"
+    send_magic_link_email(str(body.email), wrapped)
 
 
 @router.get("/me", response_model=UserResponse)

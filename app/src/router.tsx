@@ -28,6 +28,9 @@ export const router = createBrowserRouter([
     Component: RootLayout,
     children: [
       { index: true, Component: HomePage },
+      // Magic-link landing: initialFirebaseUrl is captured at module load before
+      // this redirect fires, so useAuthInit still has the Firebase URL to complete sign-in.
+      { path: "auth/verify", element: <Navigate to="/" replace /> },
       { path: "shared/:shareToken", Component: SharedArcScreen },
       {
         path: "arc/:jobId",

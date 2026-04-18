@@ -12,24 +12,18 @@ def send_push_notification(fcm_token: str, job_id: str) -> None:
     _get_app() 
 
     arc_url = f"{_APP_BASE_URL}/arc/{job_id}"
-
+    notification = messaging.Notification(
+        title="arc.",
+            body="Your story arc is ready!",
+    )
+    webpush_config = messaging.WebpushConfig(
+        fcm_options=messaging.WebpushFCMOptions(link=arc_url)
+    )
+    
     message = messaging.Message(
         token=fcm_token,
-        # notification payload → high-priority push delivery (delivered
-        # immediately, not batched). sw.ts's onBackgroundMessage will call
-        # showNotification() itself with data.url, suppressing the auto-show,
-        # so no duplicate and the notificationclick handler gets the right URL.
-        notification=messaging.Notification(
-            title="arc.",
-            body="Your story arc is ready!",
-        ),
-        data={
-            "url": arc_url,
-            "job_id": job_id,
-        },
-        webpush=messaging.WebpushConfig(
-            headers={"TTL": "86400"},
-        ),
+        notification=notification,
+        webpush=webpush_config
     )
 
     try:

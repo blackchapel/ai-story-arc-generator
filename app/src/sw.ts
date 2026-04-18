@@ -11,20 +11,24 @@ import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 declare const self: ServiceWorkerGlobalScope;
 
 // ── Workbox precaching ────────────────────────────────────────────────────────
-precacheAndRoute(
+const manifest =
   (
     self as unknown as {
       __WB_MANIFEST: { url: string; revision: string | null }[];
     }
-  ).__WB_MANIFEST,
-);
+  ).__WB_MANIFEST ?? [];
+
+precacheAndRoute(manifest);
 cleanupOutdatedCaches();
 
-registerRoute(
-  new NavigationRoute(createHandlerBoundToURL("index.html"), {
-    denylist: [/^\/api\//, /^\/output\//, /\.[^/]+$/],
-  }),
-);
+// Only valid in production where index.html is actually precached.
+if (manifest.length > 0) {
+  registerRoute(
+    new NavigationRoute(createHandlerBoundToURL("index.html"), {
+      denylist: [/^\/api\//, /^\/output\//, /\.[^/]+$/],
+    }),
+  );
+}
 
 // ── Firebase Cloud Messaging ──────────────────────────────────────────────────
 const firebaseApp = initializeApp({
@@ -41,41 +45,42 @@ const messaging = getMessaging(firebaseApp);
 // Show our own notification so we control the data.url for notificationclick.
 // This suppresses Firebase's auto-show when a notification payload is present.
 onBackgroundMessage(messaging, async (payload) => {
-  const data = payload.data as Record<string, string> | undefined;
-  const arcUrl = data?.url ?? "/";
-  const jobId = data?.job_id ?? "generic";
-
-  return self.registration.showNotification("arc.", {
-    body: "Your story arc has finished generating.",
+  const link = payload.fcmOptions?.link || payload.data?.link;
+  const notificationTitle = payload.notification?.title || "arc.";
+  const notificationOptions = {
+    body:
+      payload.notification?.body || "Your story arc has finished generating.",
     icon: "/pwa-192x192.png",
-    badge: "/pwa-192x192.png",
-    tag: `arc-ready-${jobId}`,
-    data: { url: arcUrl },
-    requireInteraction: true,
-  } as NotificationOptions);
+    data: { url: link },
+  };
+
+  return self.registration.showNotification(
+    notificationTitle,
+    notificationOptions,
+  );
 });
 
 // ── Notification Click Logic ──────────────────────────────────────────────────
 self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
 
-  const data = event.notification.data as Record<string, string> | undefined;
-  const targetUrl = data?.url ?? "/";
-  const fullUrl = new URL(targetUrl, self.location.origin).href;
-
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
+        const url = event.notification.data.url;
+        if (!url) return;
+
         // App is already open — post a message so React Router navigates
         // without a full page reload, then bring the window to foreground.
-        const existing = clientList[0] as WindowClient | undefined;
-        if (existing) {
-          existing.postMessage({ type: "SW_NAVIGATE", url: fullUrl });
-          return existing.focus();
+        for (const client of clientList) {
+          if (client.url === url && "focus" in client) {
+            return client.focus();
+          }
         }
+
         // App is closed — open it directly at the arc URL.
-        return self.clients.openWindow(fullUrl);
+        return self.clients.openWindow(url);
       }),
   );
 });

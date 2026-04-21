@@ -3,6 +3,7 @@ import { useAuthStore } from "@/store/authStore";
 
 import RootLayout from "@/App";
 import HomePage from "@/pages/HomePage";
+import NotFoundPage from "@/pages/NotFoundPage";
 import { ResultScreen } from "@/components/ResultScreen";
 import { SharedArcScreen } from "@/components/SharedArcScreen";
 
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      { path: "*", Component: NotFoundPage },
     ],
   },
 ]);

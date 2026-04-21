@@ -1,13 +1,15 @@
 import { createContext, useContext } from "react";
-import type { ToastType } from "@/hooks/useToast";
+import type { ToastType, ToastOptions } from "@/hooks/useToast";
+
+type ShowToast = (message: string, typeOrOptions?: ToastType | ToastOptions) => void;
 
 interface ToastContextValue {
-  showToast: (message: string, type?: ToastType) => void;
+  showToast: ShowToast;
 }
 
 export const ToastContext = createContext<ToastContextValue | null>(null);
 
-export function useShowToast(): (message: string, type?: ToastType) => void {
+export function useShowToast(): ShowToast {
   const ctx = useContext(ToastContext);
   if (!ctx) throw new Error("useShowToast must be used within RootLayout");
   return ctx.showToast;

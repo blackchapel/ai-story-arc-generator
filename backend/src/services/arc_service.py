@@ -233,7 +233,7 @@ def _save_arc_to_db(
         db.close()
 
 
-def _dispatch_notifications(job_id: str) -> None:
+def _dispatch_notifications(job_id: str, title: str, body: str, img: str) -> None:
     """Send FCM push notifications for all pending subscriptions for this job."""
     db = SessionLocal()
     try:
@@ -248,7 +248,7 @@ def _dispatch_notifications(job_id: str) -> None:
         )
         for n in pending:
             try:
-                send_push_notification(n.fcm_token, job_id)  # type: ignore[arg-type]
+                send_push_notification(n.fcm_token, job_id, title, body, img)
                 n.sent_at = datetime.now(timezone.utc)
             except Exception as exc:
                 logger.error(
@@ -340,7 +340,7 @@ def run_pipeline(
             _delete_arc_from_db(replace_arc_id)
 
         emit("COMPLETED")
-        _dispatch_notifications(job_id)
+        _dispatch_notifications(job_id, _strip_tags(analysis.topic.title), analysis.topic.subtitle, analysis.topic.eyebrow.split(".")[0].strip())
         logger.info("Pipeline complete in %.1fs", time.time() - start)
 
     except Exception:

@@ -3,19 +3,26 @@ import { getToken, onMessage, type Messaging } from "firebase/messaging";
 import { getFirebaseMessaging } from "@/lib/firebase";
 
 export type PushPermissionState =
-  | "checking"       // Determining initial state
-  | "unsupported"    // Notification API or SW not available
-  | "ios-no-pwa"     // iOS Safari without PWA install — no push support
-  | "default"        // Not yet asked
-  | "granted"        // Already granted
-  | "denied";        // Blocked by user
+  | "checking" // Determining initial state
+  | "unsupported" // Notification API or SW not available
+  | "ios-no-pwa" // iOS Safari without PWA install — no push support
+  | "default" // Not yet asked
+  | "granted" // Already granted
+  | "denied"; // Blocked by user
+
+export interface ForegroundMessage {
+  jobId: string;
+  url: string;
+}
 
 export interface UsePushNotificationsReturn {
   permissionState: PushPermissionState;
   /** Request permission + fetch FCM token. Returns the token on success or null on failure. */
   requestAndGetToken: () => Promise<string | null>;
-  /** Set up foreground message listener. Calls onArcReady with job_id and url when push received while app is open. */
-  onForegroundMessage: (handler: (jobId: string, url: string) => void) => () => void;
+  /** Set up foreground message listener. Calls handler with structured message when push received while app is open. */
+  onForegroundMessage: (
+    handler: (msg: ForegroundMessage) => void,
+  ) => () => void;
 }
 
 function detectPermissionState(): PushPermissionState {
@@ -39,7 +46,8 @@ function detectPermissionState(): PushPermissionState {
 }
 
 export function usePushNotifications(): UsePushNotificationsReturn {
-  const [permissionState, setPermissionState] = useState<PushPermissionState>("checking");
+  const [permissionState, setPermissionState] =
+    useState<PushPermissionState>("checking");
 
   useEffect(() => {
     setPermissionState(detectPermissionState());
@@ -85,15 +93,19 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   }, []);
 
   const onForegroundMessage = useCallback(
-    (handler: (jobId: string, url: string) => void): (() => void) => {
+    (handler: (msg: ForegroundMessage) => void): (() => void) => {
       const messaging: Messaging | null = getFirebaseMessaging();
       if (!messaging) return () => {};
 
       const unsubscribe = onMessage(messaging, (payload) => {
         const data = payload.data as Record<string, string> | undefined;
         const jobId = data?.["job_id"] ?? "";
-        const url = data?.["url"] ?? "/";
-        handler(jobId, url);
+        const url =
+          data?.["url"] ??
+          (payload.fcmOptions as { link?: string } | undefined)?.link ??
+          "/";
+
+        handler({ jobId, url });
       });
 
       return unsubscribe;

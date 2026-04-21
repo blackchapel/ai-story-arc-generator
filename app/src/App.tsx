@@ -5,24 +5,35 @@ import { useAuthStore } from "@/store/authStore";
 import { useArcStore } from "@/store/arcStore";
 import { useAuthInit } from "@/hooks/useAuthInit";
 import { useToast } from "@/hooks/useToast";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useNotifications } from "@/hooks/useNotifications";
+import {
+  ForegroundMessage,
+  usePushNotifications,
+} from "@/hooks/usePushNotifications";
 import { Toast } from "@/components/Toast";
+import { NotificationStack } from "@/components/NotificationStack";
 import { ToastContext } from "@/context/ToastContext";
+import { NotificationContext } from "@/context/NotificationContext";
 
 // ── RootLayout ────────────────────────────────────────────────────────────────
 // Wraps all routes. Responsibilities:
 //   • Boot Firebase auth listener via useAuthInit
 //   • Sync arc store with auth state (load/clear arcs when user changes)
 //   • Session-expiry toast
-//   • Foreground push-notification → navigate to arc
-//   • Render global Toast overlay
-//   • Provide ToastContext to all child routes via Outlet
+//   • Foreground push-notification → rich notification card
+//   • Render global Toast + NotificationStack overlays
+//   • Provide ToastContext + NotificationContext to all child routes
 
 export default function RootLayout() {
   useAuthInit();
 
   const navigate = useNavigate();
   const { toast, showToast, dismissToast } = useToast();
+  const {
+    items: notifications,
+    add: addNotification,
+    remove: removeNotification,
+  } = useNotifications();
 
   const user = useAuthStore((s) => s.user);
   const authLoading = useAuthStore((s) => s.isLoading);
@@ -32,7 +43,8 @@ export default function RootLayout() {
 
   // ── Open auth overlay on home when cross-device magic-link is detected ────
   useEffect(() => {
-    if (pendingLinkSignIn) navigate("/", { state: { openAuth: true }, replace: true });
+    if (pendingLinkSignIn)
+      navigate("/", { state: { openAuth: true }, replace: true });
   }, [pendingLinkSignIn, navigate]);
 
   // ── Load / clear arcs when auth state settles ─────────────────────────────
@@ -45,7 +57,6 @@ export default function RootLayout() {
 
     if (!user) {
       clearArcs();
-      // Show session-expiry toast only when transitioning from logged-in
       if (prevUser !== null) {
         showToast("Your session expired. Please log in again.");
       }
@@ -59,7 +70,7 @@ export default function RootLayout() {
     return () => ctrl.abort();
   }, [user, authLoading, loadArcs, clearArcs, showToast]);
 
-  // ── Background notification click → navigate via SW message ─────────────
+  // ── Background notification click → navigate via SW message ──────────────
   useEffect(() => {
     if (!navigator.serviceWorker) return;
     const handler = (event: MessageEvent<{ type: string; url: string }>) => {
@@ -70,20 +81,30 @@ export default function RootLayout() {
       } catch {}
     };
     navigator.serviceWorker.addEventListener("message", handler);
-    return () => navigator.serviceWorker.removeEventListener("message", handler);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", handler);
   }, [navigate]);
 
-  // ── Foreground push notifications ─────────────────────────────────────────
+  // ── Foreground push notifications → rich card ────────────────────────────
   const { onForegroundMessage } = usePushNotifications();
   const handleForegroundMessage = useCallback(
-    (jobId: string) => {
-      showToast("Your arc is ready!", "success");
-      setTimeout(() => {
-        // App is open → there is history → back button can use -1
-        navigate(`/arc/${jobId}`, { state: { from: "home" } });
-      }, 800);
+    ({ url, jobId }: ForegroundMessage) => {
+      const path = jobId
+        ? `/arc/${jobId}`
+        : (() => {
+            try {
+              return new URL(url).pathname;
+            } catch {
+              return url;
+            }
+          })();
+
+      addNotification({
+        actionLabel: "View arc",
+        onAction: () => navigate(path, { state: { from: "home" } }),
+      });
     },
-    [navigate, showToast],
+    [navigate, addNotification],
   );
 
   useEffect(() => {
@@ -91,9 +112,15 @@ export default function RootLayout() {
   }, [onForegroundMessage, handleForegroundMessage]);
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
-      <Toast toast={toast} onDismiss={dismissToast} />
-      <Outlet />
-    </ToastContext.Provider>
+    <NotificationContext.Provider value={{ addNotification }}>
+      <ToastContext.Provider value={{ showToast }}>
+        <Toast toast={toast} onDismiss={dismissToast} />
+        <NotificationStack
+          items={notifications}
+          onDismiss={removeNotification}
+        />
+        <Outlet />
+      </ToastContext.Provider>
+    </NotificationContext.Provider>
   );
 }

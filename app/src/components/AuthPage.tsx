@@ -413,6 +413,24 @@ export const AuthPage = memo(function AuthPage({
       : "calc(env(safe-area-inset-bottom, 16px) + 16px)";
   const panelBase = "absolute inset-0 flex flex-col items-center";
 
+  // On iOS Safari (PWA), overflow:hidden on a fixed container does NOT clip
+  // absolutely-positioned children, so panels at translateX(±100%) bleed
+  // through visually. Toggling visibility:hidden (with a delay matching the
+  // slide duration so the exit animation still plays) is the reliable fix.
+  const SLIDE_DURATION = "0.32s cubic-bezier(0.4,0,0.2,1)";
+  function panelStyle(
+    isActive: boolean,
+    inactiveTransform: string,
+  ): React.CSSProperties {
+    return {
+      transform: isActive ? "translateX(0)" : inactiveTransform,
+      transition: isActive
+        ? `transform ${SLIDE_DURATION}`
+        : `transform ${SLIDE_DURATION}, visibility 0s 0.32s`,
+      visibility: isActive ? "visible" : "hidden",
+    };
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
@@ -431,10 +449,7 @@ export const AuthPage = memo(function AuthPage({
         className={panelBase}
         aria-hidden={step !== "email"}
         {...(step !== "email" ? { inert: "" } : {})}
-        style={{
-          transform: step === "email" ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-        }}
+        style={panelStyle(step === "email", "translateX(-100%)")}
       >
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
         <div className="flex w-full items-center px-5 pt-4">
@@ -558,10 +573,7 @@ export const AuthPage = memo(function AuthPage({
         className={panelBase}
         aria-hidden={step !== "sent"}
         {...(step !== "sent" ? { inert: "" } : {})}
-        style={{
-          transform: step === "sent" ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-        }}
+        style={panelStyle(step === "sent", "translateX(100%)")}
       >
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
         <div className="flex w-full items-center px-5 pt-4">
@@ -638,10 +650,7 @@ export const AuthPage = memo(function AuthPage({
         className={panelBase}
         aria-hidden={step !== "otp"}
         {...(step !== "otp" ? { inert: "" } : {})}
-        style={{
-          transform: step === "otp" ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-        }}
+        style={panelStyle(step === "otp", "translateX(100%)")}
       >
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
         <div className="flex w-full items-center px-5 pt-4">
@@ -778,11 +787,7 @@ export const AuthPage = memo(function AuthPage({
         className={panelBase}
         aria-hidden={step !== "confirm-link"}
         {...(step !== "confirm-link" ? { inert: "" } : {})}
-        style={{
-          transform:
-            step === "confirm-link" ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-        }}
+        style={panelStyle(step === "confirm-link", "translateX(100%)")}
       >
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
         <div className="flex w-full flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+64px)] pb-8">
@@ -895,11 +900,7 @@ export const AuthPage = memo(function AuthPage({
         className={panelBase}
         aria-hidden={step !== "signed-in"}
         {...(step !== "signed-in" ? { inert: "" } : {})}
-        style={{
-          transform:
-            step === "signed-in" ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-        }}
+        style={panelStyle(step === "signed-in", "translateX(100%)")}
       >
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
         <div className="flex w-full flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+56px)] pb-8">

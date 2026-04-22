@@ -95,9 +95,13 @@ export default function HomePage() {
   const initStateRef = useRef(location.state as HomeLocationState | null);
   useEffect(() => {
     const s = initStateRef.current;
-    if (s?.openAuth)        setAuthOpen(true);
-    if (s?.processingJobId) setProcessingJobId(s.processingJobId);
-    // Wipe the history entry state so a hard reload doesn't re-trigger overlays.
+    // ResultScreen's regenerate flow uses sessionStorage + navigate(-1) to avoid
+    // pushing a duplicate home entry, so check here too.
+    const ssJobId = sessionStorage.getItem("arc-pending-job");
+    if (ssJobId) sessionStorage.removeItem("arc-pending-job");
+
+    if (s?.openAuth)                   setAuthOpen(true);
+    if (s?.processingJobId || ssJobId) setProcessingJobId(s?.processingJobId ?? ssJobId);
     if (s?.openAuth || s?.processingJobId) {
       window.history.replaceState({}, "");
     }
@@ -187,7 +191,10 @@ export default function HomePage() {
     [navigate],
   );
 
-  const handleProcessingDismiss = useCallback(() => setProcessingJobId(null), []);
+  const handleProcessingDismiss = useCallback(() => {
+    sessionStorage.removeItem("arc-pending-job");
+    setProcessingJobId(null);
+  }, []);
 
   const handleArticleClick = useCallback(
     (jobId: string) => navigate(`/arc/${jobId}`, { state: { from: "home" } }),

@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { devtools } from "zustand/middleware";
-import { signInWithEmailLink, signOut } from "firebase/auth";
+import { signInWithCustomToken, signInWithEmailLink, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { sendMagicLink as sendMagicLinkApi } from "@/apis";
+import { sendMagicLink as sendMagicLinkApi, sendOtp as sendOtpApi, verifyOtp as verifyOtpApi } from "@/apis";
 import { emailStore } from "@/utils/tokenStore";
 import type { User } from "@/types";
 
@@ -55,6 +55,12 @@ interface AuthState {
   // ── Public actions ──────────────────────────────────────────────────────────
   sendMagicLink: (email: string) => Promise<void>;
   completeLinkSignIn: (email: string) => Promise<void>;
+  /** iOS PWA: complete sign-in by pasting the raw magic link URL. */
+  completeLinkFromPaste: (email: string, rawUrl: string) => Promise<void>;
+  /** iOS PWA: request a 6-digit sign-in code via email. */
+  sendOtp: (email: string) => Promise<void>;
+  /** iOS PWA: verify the 6-digit code and sign in with the returned custom token. */
+  verifyOtp: (email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   forceLogout: () => void;
 }
@@ -82,6 +88,37 @@ export const useAuthStore = create<AuthState>()(
           emailStore.clear();
           set({ pendingLinkSignIn: false });
           cleanSignInUrl();
+          // onAuthStateChanged will fire → sets user + isLoading = false
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
+      },
+
+      completeLinkFromPaste: async (email: string, rawUrl: string) => {
+        const firebaseUrl = extractFirebaseUrl(rawUrl);
+        set({ isLoading: true });
+        try {
+          await signInWithEmailLink(auth, email, firebaseUrl);
+          emailStore.clear();
+          set({ pendingLinkSignIn: false });
+          // onAuthStateChanged will fire → sets user + isLoading = false
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
+      },
+
+      sendOtp: async (email: string) => {
+        await sendOtpApi(email);
+      },
+
+      verifyOtp: async (email: string, code: string) => {
+        set({ isLoading: true });
+        try {
+          const { custom_token } = await verifyOtpApi(email, code);
+          await signInWithCustomToken(auth, custom_token);
+          emailStore.clear();
           // onAuthStateChanged will fire → sets user + isLoading = false
         } catch (err) {
           set({ isLoading: false });
@@ -122,6 +159,9 @@ export function useAuth() {
       pendingLinkSignIn: s.pendingLinkSignIn,
       sendMagicLink: s.sendMagicLink,
       completeLinkSignIn: s.completeLinkSignIn,
+      completeLinkFromPaste: s.completeLinkFromPaste,
+      sendOtp: s.sendOtp,
+      verifyOtp: s.verifyOtp,
       logout: s.logout,
       forceLogout: s.forceLogout,
     })),

@@ -43,8 +43,7 @@ export default function RootLayout() {
 
   // ── Open auth overlay on home when cross-device magic-link is detected ────
   useEffect(() => {
-    if (pendingLinkSignIn)
-      navigate("/", { state: { openAuth: true }, replace: true });
+    if (pendingLinkSignIn) navigate("/", { state: { openAuth: true } });
   }, [pendingLinkSignIn, navigate]);
 
   // ── Load / clear arcs when auth state settles ─────────────────────────────

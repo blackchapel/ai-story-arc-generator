@@ -1,8 +1,11 @@
+import hashlib
 import logging
 import os
+import secrets
 import time
 import urllib.parse
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Annotated
 
@@ -12,13 +15,14 @@ from sqlalchemy.orm import Session
 
 from src.database import get_db
 from src.dependencies.auth import get_current_user
-from src.firebase_init import generate_magic_link
-from src.models.auth_model import SendMagicLinkRequest, UserResponse
+from src.firebase_init import create_custom_token, generate_magic_link, get_or_create_firebase_user
+from src.models.auth_model import SendMagicLinkRequest, SendOtpRequest, UserResponse, VerifyOtpRequest, VerifyOtpResponse
 from src.schemas.job_schema import JobSchema
 from src.schemas.notification_schema import NotificationSchema
+from src.schemas.otp_schema import OtpSchema
 from src.schemas.output_schema import OutputSchema
 from src.schemas.user_schema import UserSchema
-from src.services.email_client import send_magic_link_email
+from src.services.email_client import send_magic_link_email, send_otp_email
 from src.services.gcs_service import delete_blob
 
 router = APIRouter()
@@ -43,7 +47,9 @@ def _check_rate_limit(ip: str) -> None:
         _rate_store[ip].append(now)
 
 
-_APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+_APP_BASE_URL    = os.environ.get("APP_BASE_URL", "").rstrip("/")
+_OTP_TTL_MINUTES = 10
+_OTP_MAX_ATTEMPTS = 3
 
 
 @router.post("/send-magic-link", status_code=status.HTTP_204_NO_CONTENT)
@@ -66,6 +72,69 @@ def send_magic_link(body: SendMagicLinkRequest, request: Request) -> None:
     # The frontend extracts magicUrl and passes it to signInWithEmailLink().
     wrapped = f"{app_base}/auth/verify?magicUrl={urllib.parse.quote(firebase_link, safe='')}"
     send_magic_link_email(str(body.email), wrapped)
+
+
+@router.post("/send-otp", status_code=status.HTTP_204_NO_CONTENT)
+def send_otp(body: SendOtpRequest, request: Request, db: Session = Depends(get_db)) -> None:
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip)
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    otp_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_OTP_TTL_MINUTES)
+
+    otp = OtpSchema(email=str(body.email), otp_hash=otp_hash, expires_at=expires_at)
+    db.add(otp)
+    db.commit()
+
+    send_otp_email(str(body.email), code)
+
+
+@router.post("/verify-otp", response_model=VerifyOtpResponse)
+def verify_otp(body: VerifyOtpRequest, db: Session = Depends(get_db)) -> VerifyOtpResponse:
+    now = datetime.now(timezone.utc)
+    code_hash = hashlib.sha256(body.code.encode()).hexdigest()
+
+    otp = (
+        db.query(OtpSchema)
+        .filter(
+            OtpSchema.email == str(body.email),
+            OtpSchema.used == False,  # noqa: E712
+            OtpSchema.expires_at > now,
+        )
+        .order_by(OtpSchema.created_at.desc())
+        .first()
+    )
+
+    if otp is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Code has expired. Please request a new one.",
+        )
+
+    otp.attempts += 1
+
+    if otp.attempts > _OTP_MAX_ATTEMPTS:
+        otp.used = True
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Too many attempts. Please request a new code.",
+        )
+
+    if otp.otp_hash != code_hash:
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid code. Please try again.",
+        )
+
+    otp.used = True
+    db.commit()
+
+    uid = get_or_create_firebase_user(str(body.email))
+    token = create_custom_token(uid)
+    return VerifyOtpResponse(custom_token=token)
 
 
 @router.get("/me", response_model=UserResponse)

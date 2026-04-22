@@ -13,3 +13,16 @@ class UserResponse(BaseModel):
 
 class SendMagicLinkRequest(BaseModel):
     email: EmailStr
+
+
+class SendOtpRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class VerifyOtpResponse(BaseModel):
+    custom_token: str

@@ -120,6 +120,22 @@ export function sendMagicLink(email: string): Promise<void> {
   });
 }
 
+export function sendOtp(email: string): Promise<void> {
+  return apiFetch<void>("/api/auth/send-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function verifyOtp(email: string, code: string): Promise<{ custom_token: string }> {
+  return apiFetch<{ custom_token: string }>("/api/auth/verify-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code }),
+  });
+}
+
 // ── Arc API ───────────────────────────────────────────────────────────────────
 
 export function sendPrompt(prompt: string): Promise<SubmitJobResponse> {

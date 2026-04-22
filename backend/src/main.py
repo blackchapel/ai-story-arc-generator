@@ -12,6 +12,7 @@ from src.schemas.output_schema import OutputSchema        # noqa: F401
 from src.schemas.notification_schema import NotificationSchema  # noqa: F401
 from src.schemas.saved_arc_schema import SavedArcSchema   # noqa: F401
 from src.schemas.job_schema import JobSchema              # noqa: F401
+from src.schemas.otp_schema import OtpSchema             # noqa: F401
 
 from src.apis.arc_api import router as arc_router
 from src.apis.auth_api import router as auth_router
